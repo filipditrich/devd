@@ -1,0 +1,29 @@
+#!/bin/sh
+# Hook entry for Cursor / Claude / Codex. Finds node even without nvm on PATH; fails open without it.
+SELF=$0
+while [ -L "$SELF" ]; do
+	LINK=$(readlink "$SELF")
+	case $LINK in
+		/*) SELF=$LINK ;;
+		*) SELF=$(dirname "$SELF")/$LINK ;;
+	esac
+done
+DIR=$(cd "$(dirname "$SELF")" && pwd -P)
+NODE=$(command -v node 2>/dev/null)
+if [ -z "$NODE" ]; then
+	for candidate in /opt/homebrew/bin/node /usr/local/bin/node; do
+		[ -x "$candidate" ] && NODE=$candidate && break
+	done
+fi
+if [ -z "$NODE" ]; then
+	NODE=$(ls -1d "$HOME"/.nvm/versions/node/*/bin/node 2>/dev/null | sort -V | tail -1)
+fi
+if [ -z "$NODE" ]; then
+	cat >/dev/null
+	case "$1" in
+		claude|codex) ;;
+		*) printf '%s\n' '{"permission":"allow"}' ;;
+	esac
+	exit 0
+fi
+exec "$NODE" "$DIR/guard.mjs" "$@"

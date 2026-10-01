@@ -1,0 +1,16 @@
+{
+  "work_dirs": ["~/Work"],
+  "names": [
+    { "match": "acme-shop", "name": "shop" },
+    { "match": "acme-mail", "name": "mail" },
+    { "match": "api-admin", "name": "api-admin" },
+    { "pattern": "\\bacme-api\\b.*(?:services/api(?:/|\\s|$)|--filter(?:=|\\s+)(?:@acme/)?api(?:\\s|$))", "name": "api" },
+    { "pattern": "\\bportal\\b.*(?:apps/web|@portal/web)", "name": "portal-web" },
+    { "match": "dashboard", "name": "dashboard" },
+    { "match": "invoicer", "name": "invoicer" }
+  ],
+  "dev_scripts": ["dashboard"],
+  "dev_commands": ["\\bbun\\s+run\\s+src/main\\.ts\\b"],
+  "ignore": ["\\bworker-[a-z]+\\b", "\\bstart-mcp\\.sh\\b"],
+  "wrap_start": ["\\bportal\\b.*(?:apps/web|@portal/web)"]
+}
