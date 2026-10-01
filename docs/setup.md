@@ -1,5 +1,7 @@
 # Setup
 
+There are three things to set up: **portless** for stable local HTTPS URLs, **devd** for process supervision, and, if you use coding agents, **hooks and instructions** for each agent harness. The CLI works without the hooks; the hooks are what route an agent's ordinary `next dev` or `bun dev` command through devd.
+
 ## 1. Prerequisites
 
 ```bash
@@ -9,6 +11,8 @@ npm i -g portless        # or: bun add -g portless
 portless proxy start     # HTTPS on 443; asks for sudo once to trust its CA
 portless service install # optional: start the proxy at login
 ```
+
+The proxy is shared by all devd servers; start it before your first `devd up`. If you skip the optional service, start it again after login or reboot. A project also needs a package `dev` script, or you can supply a command with `devd up -- <command>`.
 
 ## 2. Install
 
@@ -48,6 +52,21 @@ After setup:
 - **Claude Code**: start a new session.
 - **Codex**: start a new session. Open `/hooks` and trust the devd `PreToolUse` hook; Codex ignores untrusted hooks.
 - **Orca** runs these agents, so it is covered. The hook also denies starting dev servers inside `orca terminal …`, tmux, screen and pm2.
+
+## 3. Verify with a real project
+
+```bash
+devd doctor                       # checks links, PATH, proxy, and harness integration
+cd ~/code/your-project            # a project with a package.json dev script
+devd ls                           # see any server already running
+devd up                           # prints the local HTTPS URL when ready
+devd logs -f your-project         # follow output; Ctrl-C leaves the server running
+devd                              # inspect the terminal panel
+```
+
+Open the printed URL in a browser. The inferred name may come from your package name, so use the id printed by `devd ls` if it differs from `your-project`. When finished, `devd stop <id>` shuts down the whole process family. Try `devd up --name web --cwd apps/web -- pnpm dev` for a monorepo app.
+
+After installing hooks, start a **new** agent session and ask it to run `devd ls` before starting the app. If an agent bypasses devd, review the harness-specific hook result in `devd doctor` and the troubleshooting below.
 
 ## Wiring a hook by hand
 
