@@ -1,0 +1,12 @@
+{
+  "work_dirs": ["~/Projects"],
+  "names": [
+    { "match": "/acme-shop", "name": "shop" },
+    { "pattern": "/acme-api(?:/|$)", "name": "api" },
+    { "pattern": "/portal/apps/web(?:/|$)", "name": "portal-web" }
+  ],
+  "dev_scripts": [],
+  "dev_commands": [],
+  "ignore": ["\\bworker-[a-z]+\\b"],
+  "wrap_start": []
+}
