@@ -1,0 +1,31 @@
+---
+description: Local dev servers run only through devd (supervised, behind portless). Reuse before spawn, stop when done, never restart what the user stopped.
+alwaysApply: true
+---
+
+# Dev servers: `devd`
+
+Start local HTTP dev servers only with `devd up`. It runs the server detached behind portless (`https://<name>.localhost`, worktrees get `https://<branch>.<name>.localhost`), logs it, and returns the URL once the port answers.
+
+1. `devd ls` first. If the server you need is up, reuse its URL.
+2. `devd up [--name <app>] [-- <cmd>]` from the checkout. It returns by itself. Do not add `&`, `nohup`, tmux, or another terminal.
+3. `devd logs <id>` to read output. `devd restart <id>` after config changes.
+
+Do not leave servers running that nobody needs:
+
+- Once you are done with a server you started (tests passed, screenshot taken, change verified), run `devd stop <id>` before you finish.
+- Keep it running only when you hand it to the user to check. Say so in your reply, with the id and URL.
+- devd stops agent-started servers after 15 minutes without activity (no requests, CPU, or log output) and notifies the user. That is intended. Do not keep a server alive with polling, curl loops, or restarts. If you need it again later, `devd up <id>` works after an idle stop.
+- Only stop servers you started. Leave the user's own servers alone.
+
+Exit codes:
+
+- `3`: the user stopped it, or it was killed or died on its own. Do not start it again and do not work around it. Tell the user; they can run `devd up <id>`.
+- `4`: memory or server budget is full. Reuse a running server or ask the user to stop one.
+- `5`: user-only action.
+
+User-only: `devd stop --all` / `--strays`, `devd forget`, `devd keep`, `devd config key=value`, `devd up --over-budget`, `devd ui`, `devd setup`, `portless --force`, `portless proxy stop`, `portless clean`.
+
+Not dev servers (run them normally): `tsc --watch`, rollup, docker, `next build`, `next start`, and whatever the user lists under `ignore` in `~/.config/devd/config.json`.
+
+A shell hook rewrites raw `bun/pnpm/npm dev`, `next dev`, `vite`, `nest start`, and `portless run` into `devd up`, and denies the user-only actions. If it denies, follow the message.

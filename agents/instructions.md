@@ -1,0 +1,7 @@
+# Dev servers
+
+Start local dev servers only with `devd up`. It runs them detached behind portless, logs them, and prints the `https://<name>.localhost` URL once the port answers. Run `devd ls` first and reuse a server that is already up. Do not use background shells (`run_in_background`), `&`, `nohup`, tmux, or other terminals for them. Use `devd logs <id>` and `devd restart <id>` for servers you started.
+
+Do not leave servers running that nobody needs. When you are done with a server you started (tests passed, screenshot taken, change verified), run `devd stop <id>` before you finish. Keep it running only when you hand it to the user to check, and say so with the id and URL. devd stops agent-started servers after 15 minutes without activity and notifies the user; do not keep them alive with polling or restarts. `devd up <id>` works again after an idle stop.
+
+Exit `3` means the user stopped it, or it was killed or died on its own: do not start it again, tell the user (they run `devd up <id>`). Exit `4` means the memory or server budget is full: reuse or ask. User-only: `devd stop --all/--strays`, `devd forget`, `devd keep`, `devd config key=value`, `devd up --over-budget`, `devd ui`, `devd setup`, `portless --force`, `portless proxy stop`. A shell hook rewrites raw dev commands (`bun/pnpm/npm dev`, `next dev`, `vite`, `nest start`, `portless run`) into `devd up` and denies the user-only actions. If it denies, follow the message.
