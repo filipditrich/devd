@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Lint
+        run: |
+          python -m pip install --quiet pyflakes
+          python -m pyflakes src bin/devd tests
+          sh -n guard/guard
+          bash -n tests/e2e/*.sh
+      - name: Hook rules
+        run: node --test tests/guard.test.mjs
+      - name: Core and setup
+        run: python -m unittest discover -s tests -v
+      - name: CLI smoke
+        run: |
+          bin/devd --version
+          bin/devd --help
+          bin/devd setup --dry-run
