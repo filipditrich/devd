@@ -305,6 +305,7 @@ export function guardCommand(input, cwd = '') {
 		if (/\bdevd\s+config\s+\S+=/.test(command)) return userOnly('devd config');
 		if (/\bdevd\s+stop\b[^;&|]*--(?:all|strays)\b/.test(command)) return userOnly('devd stop --all / --strays');
 		if (/\bdevd\s+up\b[^;&|]*--over-budget\b/.test(command)) return userOnly('devd up --over-budget');
+		if (/\bdevd\s+up\b[^;&|]*--force\b/.test(command)) return userOnly('devd up --force');
 		return { action: 'rewrite', command: `${AGENT_PREFIX}${command}`, reason: 'devd runs as agent' };
 	}
 

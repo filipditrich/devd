@@ -11,8 +11,9 @@ os.environ["DEVD_CONFIG"] = str(TESTS / "fixtures" / "config.json")
 sys.path.insert(0, str(TESTS.parent / "src"))
 
 from devd.install import MARK_BEGIN, MARK_END, replace_block  # noqa: E402
-from devd.model import agent_may_start, classify_exit, down_reason, idle_limit_s  # noqa: E402
+from devd.model import agent_may_start, classify_exit, down_reason, idle_limit_s, note_presence  # noqa: E402
 from devd.naming import record_id  # noqa: E402
+from devd.procs import Proc, route_pids  # noqa: E402
 from devd.runner import build_argv  # noqa: E402
 from devd.util import fmt_minutes, now, parse_minutes, parse_size_mb  # noqa: E402
 
@@ -54,8 +55,25 @@ class Naming(unittest.TestCase):
 
     def test_portless_wrapping(self) -> None:
         self.assertEqual(build_argv("shop", "bun run dev")[1:], ["run", "--name", "shop", "--", "bun", "run", "dev"])
-        self.assertEqual(build_argv("shop", "bun run dev", raw=True), ["bun", "run", "dev"])
+        self.assertEqual(
+            build_argv("shop", "bun run dev", force=True)[1:],
+            ["run", "--name", "shop", "--force", "--", "bun", "run", "dev"],
+        )
+        self.assertEqual(build_argv("shop", "bun run dev", raw=True, force=True), ["bun", "run", "dev"])
         self.assertEqual(build_argv("shop", "FOO=1 bun dev && x", raw=True), ["/bin/sh", "-c", "FOO=1 bun dev && x"])
+
+    def test_route_holder_is_part_of_the_tree_to_stop(self) -> None:
+        owner = Proc(5, 1, 10, "t", "portless run --name hub")
+        child = Proc(6, 5, 10, "t", "bun run dev")
+        other = Proc(7, 1, 10, "t", "other")
+        procs = {5: owner, 6: child, 7: other}
+        routes = [
+            {"hostname": "feat.hub.localhost", "pid": 5, "port": 1},
+            {"hostname": "other.hub.localhost", "pid": 7, "port": 2},
+            {"hostname": "feat.hub.localhost", "pid": 99, "port": 3},
+        ]
+        self.assertEqual(route_pids({"hostname": "feat.hub.localhost"}, procs, routes), {5, 6})
+        self.assertEqual(route_pids({}, procs, routes), set())
 
 
 class Lifecycle(unittest.TestCase):
@@ -87,6 +105,18 @@ class Lifecycle(unittest.TestCase):
     def test_idle_reason(self) -> None:
         rec = {"status": "stopped", "stopped_by": "idle", "idle_limit_min": 15, "stopped_at": now()}
         self.assertTrue(down_reason(rec).startswith("stopped after 15m idle"))
+
+    def test_a_live_process_is_not_left_looking_failed(self) -> None:
+        rec = {"status": "failed", "port": 4610, "ended_at": 1, "exit_code": 1}
+        note_presence(rec, alive=True, has_route=False)
+        self.assertEqual(rec["status"], "running")
+        self.assertNotIn("exit_code", rec)
+        stopped = {"status": "stopped", "stopped_by": "user"}
+        note_presence(stopped, alive=True, has_route=True)
+        self.assertEqual(stopped["status"], "stopped")
+        gone = {"status": "running", "started_at": now()}
+        note_presence(gone, alive=False, has_route=False)
+        self.assertEqual(gone["status"], "killed")
 
 
 class ManagedBlock(unittest.TestCase):

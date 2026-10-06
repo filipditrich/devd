@@ -22,11 +22,26 @@ def refresh(state: dict, procs: dict[int, Proc]) -> None:
         if route:
             rec["hostname"] = route["hostname"]
             rec["port"] = route["port"]
-        if rec["status"] in ("starting", "running"):
-            if fam:
-                rec["status"] = "running" if route or rec["status"] == "running" else "starting"
-            else:
-                classify_exit(rec, None)
+        note_presence(rec, alive=bool(fam), has_route=route is not None)
+
+
+def note_presence(rec: dict, alive: bool, has_route: bool) -> None:
+    """Reconcile the recorded status with whether its process tree is actually alive.
+
+    A record stuck at killed/failed/exited while the tree is still up would make
+    the next start skip the kill and then lose the portless name to that process.
+    """
+    if alive and rec["status"] in ("killed", "failed", "exited"):
+        rec["status"] = "running" if has_route or rec.get("port") else "starting"
+        rec.pop("ended_at", None)
+        rec.pop("exit_code", None)
+        return
+    if rec["status"] not in ("starting", "running"):
+        return
+    if alive:
+        rec["status"] = "running" if has_route or rec["status"] == "running" else "starting"
+    else:
+        classify_exit(rec, None)
 
 
 def classify_exit(rec: dict, code: int | None) -> None:

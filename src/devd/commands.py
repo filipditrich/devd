@@ -23,8 +23,8 @@ from .util import (
     short_path,
     user_only,
 )
-from .state import load_state, locked_state, strip_private, tail, url_of
-from .procs import kill_pids, listeners, snapshot
+from .state import load_state, locked_state, read_routes, strip_private, tail, url_of
+from .procs import kill_pids, listeners, route_pids, snapshot
 from .naming import default_cmd, find_record, git_root, infer_name, lookup, unique_id
 from .model import (
     adopt_unit_as_stopped,
@@ -62,18 +62,39 @@ def resolve_up_target(state: dict, args: argparse.Namespace) -> tuple[str, str, 
     return name, cwd, git_root(cwd), cmd
 
 
+def begin_replace(rec: dict, procs: dict, who: str) -> set[int]:
+    """Mark the record stopped and return every pid that still owns it.
+
+    Stop is recorded before the kill so the outgoing runner does not classify
+    its own exit over the start that replaces it.
+    """
+    pids, _ = mark_stopped(rec, procs, who)
+    pids |= route_pids(rec, procs, read_routes())
+    return pids
+
+
+def finish_replace(rec: dict, who: str) -> None:
+    rec.update({"status": "starting", "started_at": now(), "started_by": who, "port": None, "last_active": now()})
+    for k in ("stopped_at", "stopped_by", "ended_at", "exit_code", "idle_limit_min"):
+        rec.pop(k, None)
+
+
 def cmd_up(args: argparse.Namespace) -> int:
     who = actor()
     if who == "agent" and args.over_budget:
         return user_only("`--over-budget`", "devd up --over-budget ...")
+    if who == "agent" and args.force:
+        return user_only("`--force`", "devd up --force ...")
 
     procs = snapshot()
     ports = listeners()
+    to_kill: set[int] = set()
+    reclaim = False
     with locked_state() as state:
         refresh(state, procs)
         name, cwd, root, cmd = resolve_up_target(state, args)
         rec = find_record(state, name, root)
-        if rec and rec["status"] in ("starting", "running"):
+        if rec and rec["status"] in ("starting", "running") and not args.force:
             rec["last_active"] = now()
             strip_private(state)
             url = url_of(rec) or "(route not registered yet)"
@@ -88,15 +109,16 @@ def cmd_up(args: argparse.Namespace) -> int:
         units = unmanaged_units(state, procs, ports)
         dup = next((u for u in units if u.get("hostname") and u["hostname"].split(".")[-2] == name
                     and u.get("cwd", "").startswith(root)), None)
-        if dup:
+        if dup and not args.force:
             strip_private(state)
             print(f"{name} is already running outside devd: https://{dup['hostname']} (pid {dup['root_pid']}).")
             print("Reuse it. The user can stop it with: devd stop " + dup["hostname"].removesuffix(".localhost"))
             return EXIT_OK
 
+        replacing = bool(rec and rec["status"] in ("starting", "running"))
         rss_kb, count = budget_used(state, units)
         cfg = state["config"]
-        if not args.over_budget and (rss_kb / 1024 >= cfg["max_rss_mb"] or count >= cfg["max_servers"]):
+        if not replacing and not args.over_budget and (rss_kb / 1024 >= cfg["max_rss_mb"] or count >= cfg["max_servers"]):
             strip_private(state)
             print(
                 f"devd: budget full ({human_bytes(rss_kb)} of {cfg['max_rss_mb'] / 1024:.1f}G, "
@@ -109,16 +131,28 @@ def cmd_up(args: argparse.Namespace) -> int:
             rid = unique_id(state, name, root)
             rec = {"id": rid, "name": name, "root": root, "created_at": now()}
             state["servers"][rid] = rec
+        # a previous instance of this name may still be registered. take it back,
+        # including when devd lost track of the process and thinks the server is down.
+        reclaim = bool(args.force or rec.get("hostname")) and not args.raw
         rec.update({
-            "cwd": cwd, "cmd": cmd, "raw": args.raw, "status": "starting", "started_at": now(), "started_by": who,
-            "log": str(LOG_DIR / f"{rec['id']}.log"), "hostname": rec.get("hostname"), "port": None, "last_active": now(),
+            "cwd": cwd, "cmd": cmd, "raw": args.raw, "log": str(LOG_DIR / f"{rec['id']}.log"),
+            "hostname": rec.get("hostname"), "force": reclaim,
         })
-        for k in ("stopped_at", "stopped_by", "ended_at", "exit_code", "idle_limit_min"):
-            rec.pop(k, None)
-        spawn(rec)
         rid = rec["id"]
+        if reclaim:
+            to_kill = begin_replace(rec, procs, who)
+        else:
+            finish_replace(rec, who)
+            spawn(rec)
         strip_private(state)
 
+    if to_kill:
+        kill_pids(to_kill)
+    if reclaim:
+        with locked_state() as state:
+            rec = state["servers"][rid]
+            finish_replace(rec, who)
+            spawn(rec)
     rec = wait_ready(rid, args.wait)
     return report_start(rec)
 
@@ -220,15 +254,14 @@ def cmd_restart(args: argparse.Namespace) -> int:
             print(f"{rec['id']} left down: {down_reason(rec)}.")
             print(f"Do not start it again. Tell the user; they can run: devd up {rec['id']}")
             return EXIT_LEFT_DOWN
-        fam, _ = mark_stopped(rec, procs, who)
+        fam = begin_replace(rec, procs, who)
         rid = rec["id"]
+        rec["force"] = not rec.get("raw")
     if fam:
         kill_pids(fam)
     with locked_state() as state:
         rec = state["servers"][rid]
-        rec.update({"status": "starting", "started_at": now(), "started_by": who, "port": None, "last_active": now()})
-        for k in ("stopped_at", "stopped_by", "ended_at", "exit_code", "idle_limit_min"):
-            rec.pop(k, None)
+        finish_replace(rec, who)
         spawn(rec)
     return report_start(wait_ready(rid, args.wait))
 

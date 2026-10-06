@@ -12,11 +12,11 @@ description: Start, reuse, stop, and debug local dev servers through devd (super
 1. `devd ls`. Reuse a live URL. Do not spawn a second server in the same checkout.
 2. `devd up [--name <name>] [-- <cmd>]`. It returns once the port answers and prints the URL. No `&`, `nohup`, tmux, or other terminals.
 3. Browser: `https://<name>.localhost`. Checkouts under `.worktrees/<effort>/` get `https://<branch>.<name>.localhost` and the id `<name>@<effort>`.
-4. `devd logs <id> [-f]` for output, `devd restart <id>` after config changes.
+4. `devd logs <id> [-f]` for output, `devd restart <id>` after config changes. Restart takes the hostname back when a previous process still has it registered.
 5. Done with it (tests passed, screenshot taken, change verified)? `devd stop <id>` before you finish. Leave it running only when you hand it to the user to check, and say so with the id and URL.
 6. Exit 3: the user stopped it, or it was killed (Activity Monitor, OOM) or died on its own. Do not start it again. Tell the user; they run `devd up <id>`. A failure during the first 60 s of startup is not exit 3, so fix the error and retry.
 7. Exit 4: the budget is full (`devd config` shows it). Reuse, or ask the user to stop something.
-8. Never `portless --force`, `portless proxy stop`, `devd stop --all`, `devd forget`, `devd keep`, or `devd config key=value`. Those are for the user.
+8. Never `portless --force`, `portless proxy stop`, `devd up --force`, `devd stop --all`, `devd forget`, `devd keep`, or `devd config key=value`. Those are for the user. `devd restart` already reclaims the name.
 9. Health: `portless doctor`, `devd doctor`. `devd ls` marks routes that are registered but `(not listening)`.
 
 ## Idle auto-stop

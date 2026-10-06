@@ -24,7 +24,7 @@ Exit codes:
 - `4`: memory or server budget is full. Reuse a running server or ask the user to stop one.
 - `5`: user-only action.
 
-User-only: `devd stop --all` / `--strays`, `devd forget`, `devd keep`, `devd config key=value`, `devd up --over-budget`, `devd ui`, `devd setup`, `portless --force`, `portless proxy stop`, `portless clean`.
+User-only: `devd stop --all` / `--strays`, `devd forget`, `devd keep`, `devd config key=value`, `devd up --over-budget`, `devd up --force`, `devd ui`, `devd setup`, `portless --force`, `portless proxy stop`, `portless clean`. `devd restart` already takes a portless name back.
 
 Not dev servers (run them normally): `tsc --watch`, rollup, docker, `next build`, `next start`, and whatever the user lists under `ignore` in `~/.config/devd/config.json`.
 

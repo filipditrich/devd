@@ -23,6 +23,7 @@ def main(argv: list[str]) -> int:
     p.add_argument("--over-budget", action="store_true", help="user only: ignore the memory/server budget")
     p.add_argument("--wait", type=float, default=45, help="seconds to wait for the port (default 45)")
     p.add_argument("--raw", action="store_true", help="do not wrap in portless (the script already does, or PORTLESS=0)")
+    p.add_argument("--force", action="store_true", help="user only: take the portless name back if another process still has it")
     p.set_defaults(func=cmd_up)
     p.epilog = "Pass the command after --, e.g. devd up --name hub -- bun run dev"
 
@@ -41,6 +42,7 @@ def main(argv: list[str]) -> int:
     p = sub.add_parser("restart", help="restart a running server in place")
     p.add_argument("target")
     p.add_argument("--wait", type=float, default=45)
+    p.add_argument("--force", action="store_true", help="take the portless name back (restart already does this)")
     p.set_defaults(func=cmd_restart)
 
     p = sub.add_parser("logs", help="show a server's log")

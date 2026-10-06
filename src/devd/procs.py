@@ -87,6 +87,28 @@ def family(procs: dict[int, Proc], rec: dict) -> set[int]:
     return pids
 
 
+def route_pids(rec: dict, procs: dict[int, Proc], routes: list[dict]) -> set[int]:
+    """Live processes registered on this server's portless hostname, plus their trees.
+
+    The route file is the source portless itself checks. A restart can miss the
+    process in the tagged family (env scan truncated, runner start time drifted)
+    and still need to stop whoever holds the name.
+    """
+    host = rec.get("hostname")
+    if not host:
+        return set()
+    pids: set[int] = set()
+    for route in routes:
+        if route.get("hostname") != host:
+            continue
+        pid = route.get("pid")
+        if not isinstance(pid, int) or pid not in procs:
+            continue
+        pids.add(pid)
+        pids |= descendants(procs, pid)
+    return pids
+
+
 def tree_rss(procs: dict[int, Proc], pids: set[int]) -> int:
     return sum(procs[p].rss for p in pids if p in procs)
 

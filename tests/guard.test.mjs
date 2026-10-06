@@ -183,6 +183,8 @@ describe('guardCommand: devd itself', () => {
 		assert.equal(guardCommand('devd config max_rss=20G').action, 'deny');
 		assert.equal(guardCommand('devd config').action, 'rewrite');
 		assert.equal(guardCommand('devd up --over-budget shop').action, 'deny');
+		assert.equal(guardCommand('devd up --force shop').action, 'deny');
+		assert.equal(guardCommand('devd restart shop --force').action, 'rewrite');
 		assert.equal(guardCommand('DEVD_ACTOR=user devd up shop').action, 'deny');
 		assert.equal(guardCommand('env -i HOME=/x PATH=/bin devd up shop').action, 'deny');
 		assert.equal(guardCommand('unset CURSOR_AGENT; devd up shop').action, 'deny');

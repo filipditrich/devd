@@ -30,9 +30,14 @@ from .procs import connections, cpu_seconds, kill_pids, port_open, snapshot
 from .model import classify_exit, idle_limit_s, mark_stopped, refresh
 
 
-def build_argv(name: str, cmd: str, raw: bool = False) -> list[str]:
+def build_argv(name: str, cmd: str, raw: bool = False, force: bool = False) -> list[str]:
     inner = shlex.split(cmd) if not SHELL_META.search(cmd) else ["/bin/sh", "-c", cmd]
-    return inner if raw else [PORTLESS_BIN, "run", "--name", name, "--", *inner]
+    if raw:
+        return inner
+    argv = [PORTLESS_BIN, "run", "--name", name]
+    if force:
+        argv.append("--force")
+    return [*argv, "--", *inner]
 
 
 def cmd_run(args: argparse.Namespace) -> int:
@@ -42,7 +47,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         rec = state["servers"].get(args.id)
         if rec is None:
             return EXIT_ERROR
-        argv = build_argv(rec["name"], rec["cmd"], rec.get("raw", False))
+        argv = build_argv(rec["name"], rec["cmd"], rec.get("raw", False), rec.get("force", False))
         cwd = rec["cwd"]
     child = subprocess.Popen(argv, cwd=cwd, stdin=subprocess.DEVNULL)
 
