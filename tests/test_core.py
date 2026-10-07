@@ -1,7 +1,9 @@
 """Unit tests for the pure parts of devd: parsing, naming, status rules, and the managed Markdown block."""
 
 import os
+import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -12,7 +14,7 @@ sys.path.insert(0, str(TESTS.parent / "src"))
 
 from devd.install import MARK_BEGIN, MARK_END, replace_block  # noqa: E402
 from devd.model import agent_may_start, classify_exit, down_reason, idle_limit_s, note_presence  # noqa: E402
-from devd.naming import record_id  # noqa: E402
+from devd.naming import agent_name_error, fallback_name, package_label, record_id, rename_record  # noqa: E402
 from devd.procs import Proc, route_pids  # noqa: E402
 from devd.runner import build_argv  # noqa: E402
 from devd.util import fmt_minutes, now, parse_minutes, parse_size_mb  # noqa: E402
@@ -52,6 +54,57 @@ class Naming(unittest.TestCase):
 
     def test_unsafe_characters_are_replaced(self) -> None:
         self.assertEqual(record_id("my app", "/code/a b"), "my-app@a-b")
+
+    def test_package_label_keeps_the_scope(self) -> None:
+        self.assertEqual(package_label("@nfctron/api"), "nfctron-api")
+        self.assertEqual(package_label("@nfctron/nfctron-hub"), "nfctron-hub")
+        self.assertEqual(package_label("@nfctron/api-pass"), "nfctron-api-pass")
+        self.assertEqual(package_label("@nfctron/webpay-api"), "nfctron-webpay-api")
+        self.assertEqual(package_label("@sonde/web"), "sonde-web")
+        self.assertEqual(package_label("nfctron-tickets"), "nfctron-tickets")
+        self.assertEqual(package_label("ditrich.me"), "ditrich-me")
+
+    def test_fallback_reads_the_scoped_package_name(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            Path(directory, "package.json").write_text('{"name":"@nfctron/api"}')
+            self.assertEqual(fallback_name(directory), "nfctron-api")
+
+    def test_fallback_uses_the_repo_folder_when_the_package_is_unnamed(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory, "nfctron-api")
+            root.mkdir()
+            (root / "package.json").write_text("{}")
+            subprocess.run(["git", "init", "-q", root], check=True)
+            self.assertEqual(fallback_name(str(root)), "nfctron-api")
+
+    def test_agents_cannot_rename_a_checkout(self) -> None:
+        self.assertIsNone(agent_name_error(None, "nfctron-api"))
+        self.assertIsNone(agent_name_error("nfctron-api", "nfctron-api"))
+        self.assertIn("nfctron-api", agent_name_error("packages-api", "nfctron-api"))
+
+    def test_renaming_a_stopped_record_keeps_the_branch_and_frees_the_old_id(self) -> None:
+        state = {"servers": {}}
+        rec = {
+            "id": "api@timed-entry-cart",
+            "name": "api",
+            "root": "/code/.worktrees/timed-entry-cart/nfctron-api",
+            "status": "stopped",
+            "hostname": "timed-entry-cart.api.localhost",
+            "log": "/tmp/does-not-exist-devd-api.log",
+        }
+        state["servers"][rec["id"]] = rec
+        renamed = rename_record(state, rec, "nfctron-api")
+        self.assertEqual(renamed["id"], "nfctron-api@timed-entry-cart")
+        self.assertEqual(renamed["hostname"], "timed-entry-cart.nfctron-api.localhost")
+        self.assertNotIn("api@timed-entry-cart", state["servers"])
+        self.assertIs(state["servers"]["nfctron-api@timed-entry-cart"], renamed)
+
+    def test_a_running_record_is_not_renamed(self) -> None:
+        state = {"servers": {}}
+        rec = {"id": "hub@donation-settlement", "name": "hub", "root": "/r", "status": "running"}
+        state["servers"][rec["id"]] = rec
+        self.assertIs(rename_record(state, rec, "nfctron-hub"), rec)
+        self.assertEqual(rec["id"], "hub@donation-settlement")
 
     def test_portless_wrapping(self) -> None:
         self.assertEqual(build_argv("shop", "bun run dev")[1:], ["run", "--name", "shop", "--", "bun", "run", "dev"])
