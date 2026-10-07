@@ -215,8 +215,23 @@ describe('inferName', () => {
 		assert.equal(inferName('/Users/x/acme-api', 'pnpm --filter @acme/api dev'), 'api');
 	});
 
-	test('falls back to the package name, then null', () => {
+	test('a names rule still beats the package name', () => {
 		assert.equal(inferName(makePkg('vite', { name: '@acme/acme-shop' })), 'shop');
+	});
+
+	test('a dev command is named from the scoped package', () => {
+		const dir = makePkg('next dev', { name: '@nfctron/api' });
+		const result = guardCommand('next dev', dir);
+		assert.equal(result.action, 'rewrite');
+		assert.match(result.command, /--name nfctron-api -- /);
+	});
+
+	test('keeps the npm scope, and does not double it', () => {
+		assert.equal(inferName(makePkg('vite', { name: '@nfctron/api' })), 'nfctron-api');
+		assert.equal(inferName(makePkg('vite', { name: '@nfctron/nfctron-hub' })), 'nfctron-hub');
+		assert.equal(inferName(makePkg('vite', { name: '@nfctron/api-pass' })), 'nfctron-api-pass');
+		assert.equal(inferName(makePkg('vite', { name: '@nfctron/webpay-api' })), 'nfctron-webpay-api');
+		assert.equal(inferName(makePkg('vite', { name: 'nfctron-tickets' })), 'nfctron-tickets');
 		assert.equal(inferName('/Users/x/side-project'), null);
 	});
 });

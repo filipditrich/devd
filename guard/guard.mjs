@@ -136,9 +136,22 @@ function ruleMatches(rule, text) {
 	return false;
 }
 
+/** `@nfctron/api` → `nfctron-api`. A name that already starts with its scope is not doubled. */
+export function packageLabel(raw) {
+	const text = String(raw).trim();
+	const slug = (value) => value.toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '');
+	const scoped = text.match(/^@([^/]+)\/(.+)$/);
+	if (!scoped) return slug(text);
+	const scope = slug(scoped[1]);
+	const name = slug(scoped[2]);
+	if (name === scope || name.startsWith(`${scope}-`)) return name;
+	return slug(`${scope}-${name}`);
+}
+
 /**
  * App name for a checkout: package.json `portless` key, then the `names` rules
- * (on "cwd command", then on the package name). Null lets devd fall back to the package or folder name.
+ * (on "cwd command", then on the package name), then the package name with its
+ * scope kept. Null lets devd fall back to the repo folder.
  */
 export function inferName(cwd, command = '') {
 	const hay = `${cwd} ${command}`;
@@ -152,9 +165,10 @@ export function inferName(cwd, command = '') {
 	const byPath = names.find((rule) => ruleMatches(rule, hay));
 	if (byPath) return byPath.name;
 	const pkgName = found?.pkg?.name;
-	if (typeof pkgName === 'string') {
+	if (typeof pkgName === 'string' && pkgName.trim()) {
 		const byPkg = names.find((rule) => ruleMatches(rule, pkgName));
 		if (byPkg) return byPkg.name;
+		return packageLabel(pkgName);
 	}
 	return null;
 }

@@ -29,7 +29,7 @@ The runner checks every 20 s whether the server is in use: CPU spent by its proc
 
 ## Names
 
-The app name decides the URL. devd takes it from, in order: `--name`, the `portless` key in package.json, the `names` rules in `~/.config/devd/config.json`, the package.json name (without scope), the checkout folder name. Scripts that already run portless or Turbo go through `devd up --raw` (the hook adds `--raw`).
+The app name decides the URL. devd takes it from, in order: `--name` (an agent cannot pass one that disagrees with the checkout), the `portless` key in package.json, the `names` rules in `~/.config/devd/config.json`, the package.json name with its scope kept (`@scope/api` is `scope-api`; `@scope/scope-web` stays `scope-web`), the git checkout folder. Do not pass `--name` to shorten a repo. Scripts that already run portless or Turbo go through `devd up --raw` (the hook adds `--raw`).
 
 ## Do not wrap
 

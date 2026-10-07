@@ -25,7 +25,7 @@ from .util import (
 )
 from .state import load_state, locked_state, read_routes, strip_private, tail, url_of
 from .procs import kill_pids, listeners, route_pids, snapshot
-from .naming import default_cmd, find_record, git_root, infer_name, lookup, unique_id
+from .naming import agent_name_error, claim_checkout, default_cmd, find_record, git_root, infer_name, lookup, unique_id
 from .model import (
     adopt_unit_as_stopped,
     agent_may_start,
@@ -51,12 +51,18 @@ def resolve_up_target(state: dict, args: argparse.Namespace) -> tuple[str, str, 
             return rec["name"], rec["cwd"], rec["root"], cmd or rec["cmd"]
         if "@" in target:
             raise SystemExit(f"devd: no server with id {target}. See `devd ls --all`.")
-    name = args.name or target
+    requested = args.name or target
     if not cmd:
-        existing = find_record(state, name, git_root(cwd)) if name else None
+        existing = find_record(state, requested, git_root(cwd)) if requested else None
         cmd = existing["cmd"] if existing else default_cmd(cwd)
-    if not name:
-        name = infer_name(cwd, cmd)
+    inferred = infer_name(cwd, cmd)
+    if is_agent() and requested:
+        mismatch = agent_name_error(requested, inferred)
+        if mismatch:
+            raise SystemExit(mismatch)
+        if inferred:
+            requested = inferred
+    name = requested or inferred
     if not name:
         raise SystemExit("devd: could not infer the app name. Pass --name <name>.")
     return name, cwd, git_root(cwd), cmd
@@ -93,7 +99,7 @@ def cmd_up(args: argparse.Namespace) -> int:
     with locked_state() as state:
         refresh(state, procs)
         name, cwd, root, cmd = resolve_up_target(state, args)
-        rec = find_record(state, name, root)
+        rec = find_record(state, name, root) or claim_checkout(state, name, root, cwd)
         if rec and rec["status"] in ("starting", "running") and not args.force:
             rec["last_active"] = now()
             strip_private(state)

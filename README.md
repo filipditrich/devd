@@ -82,11 +82,11 @@ devd                                          # open the terminal panel
 
 Open the printed URL in your browser. The server survives closing this terminal. When you're done, run `devd stop acme-shop` or select it and press `s` in the panel. A user stop deliberately keeps the server down for agents; you can bring it back with `devd up acme-shop`.
 
-The app name comes from `package.json` (`portless` or package name), a config rule, or the folder name. Choose one explicitly for a monorepo or a nonstandard script:
+The app name comes from `package.json` (`portless`, or the package name with its scope kept, so `@acme/api` is `acme-api`), a config rule, or the repo folder. A `names` rule is for a monorepo command run from the repo root, not for shortening the repo:
 
 ```bash
-devd up --name shop --cwd apps/web -- bun run dev --turbo
-devd up --name api --cwd services/api -- pnpm dev:api
+devd up --cwd apps/web -- bun run dev --turbo
+devd up --cwd services/api -- pnpm dev:api   # named acme-api from @acme/api
 devd ls --all                                # include older down records
 devd logs shop -n 100                        # last 100 lines
 devd restart shop                            # restart the known command
@@ -110,7 +110,7 @@ Run `devd` in a terminal to open the control panel shown above. The top bar is y
 | You need to see what consumes your budget | `devd ls` includes devd and discovered unmanaged dev servers; adjust limits with `devd config` if needed. |
 | The proxy or hooks seem broken | `devd doctor`, then see [setup troubleshooting](docs/setup.md#troubleshooting). |
 
-**Tips:** Use `--name` when package names are generic (`web`, `app`), or add a reusable `names` rule to the config. Use `--raw` only if your command already runs portless or manages its own URL. `devd logs -f` is safe to leave with Ctrl-C. Pin a long-running server instead of disabling idle cleanup for every agent. If a URL opens the wrong checkout, compare the id, root, and hostname in `devd ls` before restarting anything.
+**Tips:** Add a `names` rule when one repo serves two apps and the package name does not say which (`@sonde/web` is already `sonde-web`). Use `--raw` only if your command already runs portless or manages its own URL. `devd logs -f` is safe to leave with Ctrl-C. Pin a long-running server instead of disabling idle cleanup for every agent. If a URL opens the wrong checkout, compare the id, root, and hostname in `devd ls` before restarting anything.
 
 ## How agents use it
 
@@ -181,8 +181,7 @@ Budget and idle limits live in devd's state and are set with `devd config`. Ever
 {
   "work_dirs": ["~/code"],
   "names": [
-    { "match": "/acme-shop", "name": "shop" },
-    { "pattern": "/acme-api/services/api(?:/|$)", "name": "api" }
+    { "pattern": "\\bportal\\b.*(?:apps/web|--filter[= ]@portal/web)", "name": "portal-web" }
   ],
   "dev_scripts": ["storybook"],
   "dev_commands": ["\\bbun\\s+run\\s+src/main\\.ts\\b"],
@@ -191,7 +190,7 @@ Budget and idle limits live in devd's state and are set with `devd config`. Ever
 }
 ```
 
-Every key is optional. Without a config, devd names an app from the `portless` key in `package.json`, then the package name, then the folder name. See [docs/configuration.md](docs/configuration.md).
+Every key is optional. Without a config, devd names an app from the `portless` key in `package.json`, then the package name with its scope kept (`@scope/api` becomes `scope-api`), then the repo folder. See [docs/configuration.md](docs/configuration.md).
 
 ## Commands
 

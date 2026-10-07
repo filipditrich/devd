@@ -108,7 +108,7 @@ For other agents, put the text of `agents/instructions.md` wherever that agent r
 
 **An agent ran `next dev` directly anyway.** Check that `devd doctor` shows the hook for that harness. Then start a new agent session, since hooks and rules load when a session starts. In Codex, check `/hooks`.
 
-**The wrong app name, or two checkouts fighting over one URL.** Add a `names` rule, or a `portless` key in `package.json`. Worktrees under `.worktrees/<effort>/` get their own `<branch>.<name>.localhost` URL automatically.
+**The wrong app name, or two checkouts fighting over one URL.** The default name keeps the npm scope (`@acme/api` is `acme-api`). Add a `names` rule, or a `portless` key in `package.json`, when one repo root launches more than one app. Worktrees under `.worktrees/<effort>/` get their own `<branch>.<name>.localhost` URL automatically.
 
 **A command was wrapped that should not be** (a worker, an MCP server). Add a regex to `ignore` in the config.
 

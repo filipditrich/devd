@@ -34,18 +34,16 @@ Default: `["~"]`. Directories that hold your code. Dev servers started outside d
 
 The app name decides the URL (`https://<name>.localhost`) and the id (`<name>@<checkout>`). devd picks the name in this order:
 
-1. `--name` on `devd up`;
+1. `--name` on `devd up`. You can pass it. An agent cannot: a name that disagrees with the checkout is rejected, so a session cannot invent a name for a repo.
 2. the `portless` key in the nearest `package.json` (`"portless": "shop"` or `"portless": { "name": "shop" }`);
 3. the first matching `names` rule, tested against `"<cwd> <command>"`, then against the package name;
-4. the `package.json` name without its scope;
-5. the git checkout folder name.
+4. the `package.json` name, with its npm scope kept: `@acme/api` becomes `acme-api`, `@acme/api-admin` becomes `acme-api-admin`. A name that already starts with its scope is not doubled (`@acme/acme-shop` stays `acme-shop`);
+5. the git checkout folder name, when the package has no name.
 
-Each rule has either `match` (a plain substring) or `pattern` (a JavaScript regular expression), plus `name`. The first rule that matches wins, so put specific rules before general ones:
+Each rule has either `match` (a plain substring) or `pattern` (a JavaScript regular expression), plus `name`. The first rule that matches wins, so put specific rules before general ones. A rule replaces the package name, so use one to disambiguate a monorepo command run from the repo root, not to shorten a repo to `api` or `web`.
 
 ```json
 "names": [
-  { "match": "/acme-api/apps/admin", "name": "api-admin" },
-  { "pattern": "/acme-api(?:/|\\s|$)", "name": "api" },
   { "pattern": "\\bportal\\b.*(?:apps/web|--filter[= ]@portal/web)", "name": "portal-web" }
 ]
 ```
