@@ -17,6 +17,7 @@ import textwrap
 import threading
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from .config import BIN, HOME
 
@@ -84,6 +85,73 @@ class Row:
             host = self.data.get("hostname")
             return host.removesuffix(".localhost") if host else f"pid {self.data['root_pid']}"
         return self.data["id"]
+
+
+def repo_label(path: str) -> str:
+    """Git repo folder for a checkout path.
+
+    `.worktrees/<effort>/<repo>/...` is `<repo>`. A plain checkout's git root
+    is already that folder, so the last path component is the repo.
+    """
+    if not path:
+        return ""
+    parts = Path(path).parts
+    if ".worktrees" in parts[:-2]:
+        return parts[parts.index(".worktrees") + 2]
+    return Path(path).name
+
+
+def _repo_of(data: dict, known: list[tuple[str, str]]) -> str:
+    root = data.get("root") or ""
+    if root:
+        return repo_label(root) or "other"
+    cwd = data.get("cwd") or ""
+    best, name = "", ""
+    for known_root, repo in known:
+        if known_root and (cwd == known_root or cwd.startswith(known_root.rstrip("/") + "/")) and len(known_root) > len(best):
+            best, name = known_root, repo
+    return name or repo_label(cwd) or "other"
+
+
+def _recency(row: Row) -> float:
+    data = row.data
+    return float(data.get("ended_at") or data.get("stopped_at") or data.get("started_at") or 0)
+
+
+def group_rows(servers: list[dict], unmanaged: list[dict], filt: str) -> list[Row]:
+    """One section per git repo. A repo with a live server comes first; the rest are alphabetical."""
+    known = [(s.get("root") or "", repo_label(s.get("root") or "")) for s in servers if s.get("root")]
+    labeled: list[tuple[str, Row]] = []
+    for server in servers:
+        labeled.append((_repo_of(server, known), Row("server", server["id"], server)))
+    for unit in unmanaged:
+        key = f"u:{unit.get('hostname') or unit['root_pid']}"
+        labeled.append((_repo_of(unit, known), Row("unmanaged", key, unit)))
+    if filt:
+        needle = filt.lower()
+
+        def keep(item: tuple[str, Row]) -> bool:
+            repo, row = item
+            hay = f"{repo} {row.label} {row.data.get('cwd', '')} {row.data.get('cmd', '')} {row.data.get('command', '')} {row.state}"
+            return needle in hay.lower()
+
+        labeled = [item for item in labeled if keep(item)]
+
+    groups: dict[str, list[Row]] = {}
+    for repo, row in labeled:
+        groups.setdefault(repo, []).append(row)
+
+    def member_key(row: Row) -> tuple:
+        name = (row.data.get("name") or row.label).lower()
+        return (not row.live, name, -_recency(row), row.label.lower())
+
+    out: list[Row] = []
+    for repo in sorted(groups, key=lambda name: (not any(r.live for r in groups[name]), name == "other", name.lower())):
+        members = groups[repo]
+        members.sort(key=member_key)
+        out.append(Row("header", f"h:{repo}", {"title": repo, "live": any(r.live for r in members)}))
+        out.extend(members)
+    return out
 
 
 class Model:
@@ -154,27 +222,7 @@ class Model:
             data = self.data
         if not data:
             return []
-        servers = data.get("servers", [])
-        live = [Row("server", s["id"], s) for s in servers if s["status"] in LIVE]
-        down = [Row("server", s["id"], s) for s in servers if s["status"] not in LIVE]
-        down.sort(key=lambda r: -(r.data.get("ended_at") or r.data.get("stopped_at") or 0))
-        unmanaged = [Row("unmanaged", f"u:{u.get('hostname') or u['root_pid']}", u) for u in data.get("unmanaged", [])]
-        if filt:
-            f = filt.lower()
-
-            def keep(r: Row) -> bool:
-                hay = f"{r.label} {r.data.get('cwd', '')} {r.data.get('cmd', '')} {r.data.get('command', '')} {r.state}".lower()
-                return f in hay
-
-            live, down, unmanaged = [r for r in live if keep(r)], [r for r in down if keep(r)], [r for r in unmanaged if keep(r)]
-        out: list[Row] = list(live)
-        if unmanaged:
-            out.append(Row("header", "h:unmanaged", {"title": "started outside devd"}))
-            out.extend(unmanaged)
-        if down:
-            out.append(Row("header", "h:down", {"title": "down"}))
-            out.extend(down)
-        return out
+        return group_rows(data.get("servers", []), data.get("unmanaged", []), filt)
 
 
 # ---------- log tail ----------
@@ -431,7 +479,8 @@ class App:
         for i, r in enumerate(rows[self.scroll: self.scroll + visible]):
             y = list_top + i
             if r.kind == "header":
-                self.put(y, 1, f"── {r.data['title']} " + "─" * w, curses.color_pair(C_DIM))
+                attr = curses.color_pair(C_ACCENT) | curses.A_BOLD if r.data.get("live") else curses.color_pair(C_DIM)
+                self.put(y, 1, f"── {r.data['title']} " + "─" * w, attr)
                 continue
             is_sel = cur is not None and r.key == cur.key
             state = r.state
@@ -803,6 +852,7 @@ class App:
             "devd control panel. It reads `devd ls --json` every 2 s and runs devd commands as you.",
             "",
             "List",
+            "  grouped by git repo; a repo with something running is listed first",
             "  ↑ ↓ / j k     move               ⏎ / l     open the log",
             "  r             start a down server, or restart a running one",
             "                (on a server started outside devd: stop it and restart it supervised)",
