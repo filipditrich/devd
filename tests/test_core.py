@@ -15,6 +15,7 @@ sys.path.insert(0, str(TESTS.parent / "src"))
 from devd.install import MARK_BEGIN, MARK_END, replace_block  # noqa: E402
 from devd.model import agent_may_start, classify_exit, down_reason, idle_limit_s, note_presence  # noqa: E402
 from devd.naming import agent_name_error, fallback_name, package_label, record_id, rename_record  # noqa: E402
+from devd.ui import group_rows, repo_label  # noqa: E402
 from devd.procs import Proc, route_pids  # noqa: E402
 from devd.runner import build_argv  # noqa: E402
 from devd.util import fmt_minutes, now, parse_minutes, parse_size_mb  # noqa: E402
@@ -187,6 +188,58 @@ class ManagedBlock(unittest.TestCase):
     def test_block_in_the_middle_keeps_both_sides(self) -> None:
         text = f"top\n\n{MARK_BEGIN}\nold\n{MARK_END}\n\nbottom\n"
         self.assertEqual(replace_block(text, None), "top\n\nbottom\n")
+
+
+class PanelRows(unittest.TestCase):
+    def test_repo_label(self) -> None:
+        self.assertEqual(repo_label("/code/.worktrees/timed-entry-cart/nfctron-api"), "nfctron-api")
+        self.assertEqual(repo_label("/code/.worktrees/timed-entry-cart/nfctron-api/services/api-pass"), "nfctron-api")
+        self.assertEqual(repo_label("/code/.worktrees/acme-shop"), "acme-shop")
+        self.assertEqual(repo_label("/Users/x/Work/NFCtron/nfctron-hub"), "nfctron-hub")
+        self.assertEqual(repo_label(""), "")
+
+    def test_groups_checkouts_of_the_same_repo(self) -> None:
+        servers = [
+            {"id": "nfctron-hub@a", "name": "nfctron-hub", "status": "stopped", "root": "/w/.worktrees/a/nfctron-hub", "ended_at": 2},
+            {"id": "nfctron-api@b", "name": "nfctron-api", "status": "stopped", "root": "/w/.worktrees/b/nfctron-api", "ended_at": 3},
+            {"id": "api-pass@b", "name": "api-pass", "status": "running", "root": "/w/.worktrees/b/nfctron-api", "started_at": 9},
+            {"id": "nfctron-api@a", "name": "nfctron-api", "status": "stopped", "root": "/w/.worktrees/a/nfctron-api", "ended_at": 1},
+            {"id": "nfctron-api-pass@a", "name": "nfctron-api-pass", "status": "stopped", "root": "/w/.worktrees/a/nfctron-api", "ended_at": 4},
+            {"id": "nfctron-tickets@c", "name": "nfctron-tickets", "status": "stopped", "root": "/w/.worktrees/c/nfctron-tickets", "ended_at": 8},
+        ]
+        labels = [(r.kind, r.data.get("title") or r.label) for r in group_rows(servers, [], "")]
+        self.assertEqual(
+            labels,
+            [
+                ("header", "nfctron-api"),
+                ("server", "api-pass@b"),
+                ("server", "nfctron-api@b"),
+                ("server", "nfctron-api@a"),
+                ("server", "nfctron-api-pass@a"),
+                ("header", "nfctron-hub"),
+                ("server", "nfctron-hub@a"),
+                ("header", "nfctron-tickets"),
+                ("server", "nfctron-tickets@c"),
+            ],
+        )
+        self.assertTrue(group_rows(servers, [], "")[0].data["live"])
+        self.assertFalse(group_rows(servers, [], "")[5].data["live"])
+
+    def test_filter_keeps_the_repo_section(self) -> None:
+        servers = [
+            {"id": "nfctron-hub@a", "name": "nfctron-hub", "status": "stopped", "root": "/w/.worktrees/a/nfctron-hub", "cwd": "/w/.worktrees/a/nfctron-hub"},
+            {"id": "api-pass@b", "name": "api-pass", "status": "running", "root": "/w/.worktrees/b/nfctron-api", "cwd": "/w/.worktrees/b/nfctron-api/services/api-pass"},
+        ]
+        labels = [r.label if r.kind != "header" else r.data["title"] for r in group_rows(servers, [], "nfctron-api")]
+        self.assertEqual(labels, ["nfctron-api", "api-pass@b"])
+
+    def test_unmanaged_joins_its_repo(self) -> None:
+        servers = [
+            {"id": "nfctron-hub@a", "name": "nfctron-hub", "status": "stopped", "root": "/w/nfctron-hub", "ended_at": 1},
+        ]
+        unmanaged = [{"hostname": "hub.localhost", "root_pid": 9, "cwd": "/w/nfctron-hub/apps/hub", "command": "vite"}]
+        labels = [(r.kind, r.data.get("title") or r.label) for r in group_rows(servers, unmanaged, "")]
+        self.assertEqual(labels, [("header", "nfctron-hub"), ("unmanaged", "hub"), ("server", "nfctron-hub@a")])
 
 
 if __name__ == "__main__":
