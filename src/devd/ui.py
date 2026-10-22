@@ -857,7 +857,7 @@ class App:
             "  r             start a down server, or restart a running one",
             "                (on a server started outside devd: stop it and restart it supervised)",
             "  U             start a down server even if the budget is full",
-            "  s             stop (agents will not restart it until you start it again)",
+            "  s             stop (agents need your native approval to start it again)",
             "  p             pin / unpin: a pinned server is never stopped for being idle",
             "                (agent-started servers stop after 15m idle: no CPU, log output, or new connections)",
             "  o / c / f     open URL in browser / copy URL / open the checkout folder",

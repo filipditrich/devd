@@ -25,6 +25,7 @@ flowchart LR
 | `src/devd/state.py` | `state.json` under an `fcntl` lock |
 | `src/devd/naming.py` | ids, checkout roots, app names (asks the guard, so both use the same rules) |
 | `src/devd/ui.py` | curses control panel; a client of the CLI (`devd ls --json` and friends) |
+| `src/devd/approval.py` | native one-time start approvals, checkout/dialog locks, refusal cooldown |
 | `src/devd/install.py` | `setup` and `doctor` |
 | `guard/guard.mjs` | the agent hook: classifies one shell command |
 | `guard/guard` | POSIX launcher: finds Node (PATH, Homebrew, nvm) and fails open without it |
@@ -33,7 +34,7 @@ flowchart LR
 ## Starting a server
 
 1. `devd up` resolves the checkout root (git top level), the app name, and the command (the package manager's `dev` script by default). If a record for that name and checkout is already running, it prints the URL and exits 0.
-2. It checks who is asking. An agent is refused with exit 3 when the record is down because of the user or an outside kill. It gets exit 4 when the memory or server budget is full.
+2. It checks who is asking. For an agent blocked by a user stop, outside kill, later exit, or full budget, it releases the state lock and queues a native Allow once / Reject dialog. Approval applies to the exact command, checkout, execution mode, stop event, and budget limits; state is rechecked before starting. A fresh stop invalidates an earlier grant. Rejection, expiry, or an unavailable dialog returns exit 3 for a down server or 4 for budget. Checkout locks prevent duplicate dialogs/starts; a separate global lock queues dialogs without blocking the UI or server state. Refusals have a 10-minute cooldown.
 3. It spawns `devd _run <id>` with `start_new_session=True`. The runner is a session leader, so closing the agent's shell doesn't take the server with it.
 4. The runner starts `portless run --name <name> -- <cmd>` (or the raw command with `--raw`). It sets `DEVD_ID=<id>` in the environment, so every descendant carries the tag, including processes that re-parent or daemonize.
 5. `devd up` polls the state until the runner records a port that answers (`--wait`, 45 s by default). Then it prints the URL and returns. A child that exits during this wait is a startup failure (exit 1), and the last log lines are printed.

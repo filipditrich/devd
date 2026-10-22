@@ -15,8 +15,8 @@ devd config agent_idle=30m user_idle=off
 
 | Key | Default | Meaning |
 | --- | --- | --- |
-| `max_rss` | `8G` | total RSS of all dev servers before agents get exit 4 |
-| `max_servers` | `5` | number of running dev servers before agents get exit 4 |
+| `max_rss` | `8G` | total RSS of all dev servers before agents need native approval (exit 4 without approval) |
+| `max_servers` | `5` | number of running dev servers before agents need native approval (exit 4 without approval) |
 | `agent_idle` | `15m` | idle time before an agent-started server is stopped; `off` disables |
 | `user_idle` | `off` | the same for servers you start |
 

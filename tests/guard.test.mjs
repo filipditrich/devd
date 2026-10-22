@@ -270,6 +270,19 @@ describe('handleHook', () => {
 		assert.equal(handleHook(JSON.stringify({ tool_input: { command: 'ls' } }), 'codex'), null);
 	});
 
+	test('running agents receive approval guidance through existing hooks', () => {
+		// Bug: sessions with old instructions abandon or kill a pending native approval.
+		for (const mode of ['codex', 'claude', 'preToolUse']) {
+			for (const command of ['devd up shop', 'devd restart shop', 'bun run dev']) {
+				const payload = handleHook(JSON.stringify({ cwd: '/Users/x/acme-shop', tool_input: { command } }), mode);
+				const reason = payload.hookSpecificOutput?.permissionDecisionReason ?? payload.agent_message;
+				assert.match(reason, /native approval/);
+				assert.match(reason, /Keep the command alive/);
+				assert.match(reason, /3.*4/);
+			}
+		}
+	});
+
 	test('empty or broken stdin fails open', () => {
 		assert.equal(handleHook('', 'preToolUse').permission, 'allow');
 		assert.equal(handleHook('{nope', 'claude'), null);

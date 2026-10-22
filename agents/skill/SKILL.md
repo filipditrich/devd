@@ -14,8 +14,8 @@ description: Start, reuse, stop, and debug local dev servers through devd (super
 3. Browser: `https://<name>.localhost`. Checkouts under `.worktrees/<effort>/` get `https://<branch>.<name>.localhost` and the id `<name>@<effort>`.
 4. `devd logs <id> [-f]` for output, `devd restart <id>` after config changes. Restart takes the hostname back when a previous process still has it registered.
 5. Done with it (tests passed, screenshot taken, change verified)? `devd stop <id>` before you finish. Leave it running only when you hand it to the user to check, and say so with the id and URL.
-6. Exit 3: the user stopped it, or it was killed (Activity Monitor, OOM) or died on its own. Do not start it again. Tell the user; they run `devd up <id>`. A failure during the first 60 s of startup is not exit 3, so fix the error and retry.
-7. Exit 4: the budget is full (`devd config` shows it). Reuse, or ask the user to stop something.
+6. A blocked `devd up` or restart of a down server opens a native Allow once / Reject dialog (user stop, outside kill, later exit, or full budget). Keep the command alive while approval is pending; tell the user devd is waiting. Allow continues that exact start automatically. The dialog expires after 2 minutes; queue waits are bounded at 5 minutes. Repeat refusals are suppressed for 10 minutes.
+7. Exit 3 (left down) or 4 (budget): approval was rejected, expired, or unavailable. Tell the user and stop that server work; respect the result. Reuse a running server only when appropriate for the same checkout. Startup failures are still retryable without approval.
 8. Never `portless --force`, `portless proxy stop`, `devd up --force`, `devd stop --all`, `devd forget`, `devd keep`, or `devd config key=value`. Those are for the user. `devd restart` already reclaims the name.
 9. Health: `portless doctor`, `devd doctor`. `devd ls` marks routes that are registered but `(not listening)`.
 
