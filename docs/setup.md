@@ -114,7 +114,7 @@ For other agents, put the text of `agents/instructions.md` wherever that agent r
 
 **A server keeps getting stopped as idle while you use it.** That only happens to agent-started servers. Pin it with `devd keep <id>` or `p` in the panel, raise `agent_idle`, or restart it yourself with `devd restart <id>`; it then counts as yours.
 
-**Exit 3 for something you want back.** Run `devd up <id>` yourself. Agents are not allowed to.
+**Exit 3 for something you want back.** The native approval was rejected, expired, or unavailable. Run `devd up <id>` yourself to bring it back immediately; repeated agent refusals suppress another dialog for 10 minutes.
 
 **Logs.** `~/.portless/devd/logs/<id>.log`. A log over 5 MB starts fresh on the next start. The state file is `~/.portless/devd/state.json`.
 

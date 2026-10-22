@@ -419,6 +419,9 @@ export function handleHook(raw, mode) {
 	const command = input.command ?? toolInput.command ?? '';
 	const cwd = toolInput.cwd || toolInput.working_directory || input.cwd || '';
 	const result = guardCommand(command, cwd);
+	if (result.action === 'rewrite' && /\bdevd\s+(?:up|restart)\b/.test(result.command)) {
+		result.reason += '. Blocked starts wait for native approval in devd. Keep the command alive while waiting; Allow once resumes it automatically. Exit 3 or 4 means approval was not obtained: tell the user and stop that server work.';
+	}
 
 	if (event === 'claude' || event === 'codex') {
 		if (result.action === 'allow') return null;
@@ -448,7 +451,7 @@ export function handleHook(raw, mode) {
 		if (result.action === 'rewrite' && !isDevdOnlyRewrite(command, result.command)) {
 			return {
 				permission: 'deny',
-				agent_message: `Dev servers must run under devd. Re-run exactly: ${result.command}`,
+				agent_message: `Dev servers must run under devd. Re-run exactly: ${result.command}\n${result.reason}`,
 				user_message: 'Blocked an unsupervised dev server. The agent was given the devd command.',
 			};
 		}

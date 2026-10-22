@@ -9,6 +9,7 @@ import shlex
 import sys
 
 from . import ui
+from .approval import StartApproval, approval_lock, fingerprint, request_start
 from .config import EXIT_BUDGET, EXIT_ERROR, EXIT_LEFT_DOWN, EXIT_OK, EXIT_USER_ONLY, LOG_DIR
 from .util import (
     actor,
@@ -85,6 +86,21 @@ def finish_replace(rec: dict, who: str) -> None:
         rec.pop(k, None)
 
 
+def replacement_revision(rec: dict) -> str:
+    return fingerprint({k: v for k, v in rec.items() if not k.startswith("_")})
+
+
+def finish_reclaim(rid: str, who: str, revision: str) -> bool:
+    with locked_state() as state:
+        rec = state["servers"].get(rid)
+        if rec is None or replacement_revision(rec) != revision:
+            print(f"devd: {rid} start cancelled: server state changed while preparing the restart. Tell the user and stop.")
+            return False
+        finish_replace(rec, who)
+        spawn(rec)
+        return True
+
+
 def cmd_up(args: argparse.Namespace) -> int:
     who = actor()
     if who == "agent" and args.over_budget:
@@ -92,6 +108,30 @@ def cmd_up(args: argparse.Namespace) -> int:
     if who == "agent" and args.force:
         return user_only("`--force`", "devd up --force ...")
 
+    if who == "user":
+        return _up_attempt(args, who, None)
+    # Serialize starts for a checkout through readiness. Followers reuse the
+    # running server or the cached refusal, rather than opening duplicate dialogs.
+    _, _, root, _ = resolve_up_target(load_state(), args)
+    print("devd: checking start request (waiting for any earlier start in this checkout).", flush=True)
+    with approval_lock("start-" + fingerprint(root)) as acquired:
+        if not acquired:
+            print("devd: start request queue timed out. Tell the user and stop; do not bypass devd.")
+            return EXIT_ERROR
+        approved_key = None
+        while True:
+            result = _up_attempt(args, who, approved_key)
+            if not isinstance(result, StartApproval):
+                return result
+            answer = request_start(result)
+            if answer != "allowed":
+                print(f"devd: approval {answer}. Server not started. Tell the user and stop; do not retry or bypass devd.", flush=True)
+                return result.exit_code
+            print("devd: approved once; rechecking server state before starting.", flush=True)
+            approved_key = result.key
+
+
+def _up_attempt(args: argparse.Namespace, who: str, approved_key: str | None) -> int | StartApproval:
     procs = snapshot()
     ports = listeners()
     to_kill: set[int] = set()
@@ -107,11 +147,6 @@ def cmd_up(args: argparse.Namespace) -> int:
             print(f"{rec['id']} already running: {url}")
             print(f"logs: devd logs {rec['id']}")
             return EXIT_OK
-        if rec and who == "agent" and not agent_may_start(rec):
-            print(f"{rec['id']} left down: {down_reason(rec)}.")
-            print(f"Do not start it again. Tell the user; they can run: devd up {rec['id']}")
-            return EXIT_LEFT_DOWN
-
         units = unmanaged_units(state, procs, ports)
         dup = next((u for u in units if u.get("hostname") and u["hostname"].split(".")[-2] == name
                     and u.get("cwd", "").startswith(root)), None)
@@ -124,13 +159,37 @@ def cmd_up(args: argparse.Namespace) -> int:
         replacing = bool(rec and rec["status"] in ("starting", "running"))
         rss_kb, count = budget_used(state, units)
         cfg = state["config"]
-        if not replacing and not args.over_budget and (rss_kb / 1024 >= cfg["max_rss_mb"] or count >= cfg["max_servers"]):
-            strip_private(state)
-            print(
-                f"devd: budget full ({human_bytes(rss_kb)} of {cfg['max_rss_mb'] / 1024:.1f}G, "
-                f"{count} of {cfg['max_servers']} servers). Not starting {name}."
-            )
-            print("Reuse a running server, or ask the user to stop one (see `devd ls`).")
+        left_down = bool(rec and who == "agent" and not agent_may_start(rec))
+        over_budget = bool(not replacing and not args.over_budget and
+                           (rss_kb / 1024 >= cfg["max_rss_mb"] or count >= cfg["max_servers"]))
+        if left_down or (who == "agent" and over_budget):
+            # A later user stop or a changed command/config invalidates the grant.
+            scope = {
+                "name": name, "cwd": cwd, "root": root, "cmd": cmd, "raw": args.raw,
+                "down": {k: rec.get(k) for k in ("status", "stopped_by", "stopped_at", "ended_at", "started_at")} if left_down else None,
+                "budget": {k: cfg[k] for k in ("max_rss_mb", "max_servers")} if over_budget else None,
+            }
+            key = fingerprint(scope)
+            if key != approved_key:
+                rid = rec["id"] if rec else unique_id(state, name, root)
+                reasons = []
+                if left_down:
+                    reasons.append(down_reason(rec))
+                if over_budget:
+                    reasons.append("memory or server budget is full")
+                permission = "Restart this server once." if left_down else "Start this server once."
+                if over_budget:
+                    permission += " Allow exceeding the current memory/server budget for this start only."
+                message = (
+                    f"Agent wants to start {rid}\n\nCheckout: {cwd}\nCommand: {cmd}\n"
+                    f"Mode: {'raw' if args.raw else 'portless'}\n\n"
+                    + "\n".join(reasons)
+                    + f"\nCurrent usage: {human_bytes(rss_kb)} of {cfg['max_rss_mb'] / 1024:.1f}G · {count} of {cfg['max_servers']} servers."
+                    + f"\n\n{permission} Other servers and global limits stay unchanged."
+                )
+                return StartApproval(key, message, EXIT_LEFT_DOWN if left_down else EXIT_BUDGET)
+        if over_budget and who == "user":
+            print(f"devd: budget full ({human_bytes(rss_kb)}, {count} servers). Use --over-budget for a one-time override.")
             return EXIT_BUDGET
 
         if rec is None:
@@ -147,6 +206,7 @@ def cmd_up(args: argparse.Namespace) -> int:
         rid = rec["id"]
         if reclaim:
             to_kill = begin_replace(rec, procs, who)
+            revision = replacement_revision(rec)
         else:
             finish_replace(rec, who)
             spawn(rec)
@@ -154,11 +214,8 @@ def cmd_up(args: argparse.Namespace) -> int:
 
     if to_kill:
         kill_pids(to_kill)
-    if reclaim:
-        with locked_state() as state:
-            rec = state["servers"][rid]
-            finish_replace(rec, who)
-            spawn(rec)
+    if reclaim and not finish_reclaim(rid, who, revision):
+        return EXIT_LEFT_DOWN
     rec = wait_ready(rid, args.wait)
     return report_start(rec)
 
@@ -241,7 +298,7 @@ def cmd_stop(args: argparse.Namespace) -> int:
         print(f"stopped {s}")
     print(f"freed about {human_bytes(freed)}")
     if who == "user":
-        print("Agents will not restart these. Bring one back with: devd up <id>")
+        print("Agents need your native approval to restart these. You can also run: devd up <id>")
     return EXIT_OK
 
 
@@ -255,20 +312,22 @@ def cmd_restart(args: argparse.Namespace) -> int:
             strip_private(state)
             eprint(f"devd: nothing matches {args.target}. See `devd ls`.")
             return EXIT_ERROR
-        if rec["status"] not in ("starting", "running") and who == "agent" and not agent_may_start(rec):
-            strip_private(state)
-            print(f"{rec['id']} left down: {down_reason(rec)}.")
-            print(f"Do not start it again. Tell the user; they can run: devd up {rec['id']}")
-            return EXIT_LEFT_DOWN
-        fam = begin_replace(rec, procs, who)
-        rid = rec["id"]
-        rec["force"] = not rec.get("raw")
+        down = rec["status"] not in ("starting", "running")
+        if not down:
+            fam = begin_replace(rec, procs, who)
+            rid = rec["id"]
+            rec["force"] = not rec.get("raw")
+            revision = replacement_revision(rec)
+        else:
+            up_args = argparse.Namespace(target=rec["id"], name=None, cwd=None, cmd=[],
+                                         raw=rec.get("raw", False), force=False,
+                                         over_budget=False, wait=args.wait)
+    if down:
+        return cmd_up(up_args)
     if fam:
         kill_pids(fam)
-    with locked_state() as state:
-        rec = state["servers"][rid]
-        finish_replace(rec, who)
-        spawn(rec)
+    if not finish_reclaim(rid, who, revision):
+        return EXIT_LEFT_DOWN
     return report_start(wait_ready(rid, args.wait))
 
 
@@ -332,7 +391,7 @@ def cmd_ls(args: argparse.Namespace) -> int:
             print(f"  {host:30} {human_bytes(u['rss']):>6}  :{u['port']}  {short_path(u.get('cwd', ''))}{health}")
             print(f"  {'':30} {u['command'][:110]}")
     if down and (args.all or len(down) <= 8):
-        print("\ndown (agents only restart ones that failed at startup, an agent stopped, or idled out):")
+        print("\ndown (agents need native approval unless startup failed, an agent stopped it, or it idled out):")
         for r in down[: None if args.all else 8]:
             print(f"  {r['id']:30} {down_reason(r)}")
     print(f"\nbudget: {human_bytes(rss_kb)} of {cfg['max_rss_mb'] / 1024:.1f}G · {count} of {cfg['max_servers']} servers")

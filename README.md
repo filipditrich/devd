@@ -35,7 +35,7 @@ The hook makes this work even when an agent tries to run its usual dev command. 
 
 - **One way to start servers.** `devd up` runs the server detached in its own session and waits until the port answers. It prints the URL, or reuses the server if it is already up.
 - **Stable URLs instead of ports.** portless gives `https://shop.localhost`; git worktrees get `https://<branch>.shop.localhost`. Nothing fights over 3000.
-- **You stay in charge.** If you stop a server, or kill it in Activity Monitor, or the OOM killer takes it, agents are told to leave it down and ask you. They can still restart their own servers and retry ones that crashed during startup.
+- **You stay in charge.** If you stop a server, or kill it in Activity Monitor, or the OOM killer takes it, devd shows a native Allow once / Reject dialog before an agent can start it again. They can still restart their own servers and retry ones that crashed during startup.
 - **No leftovers.** Agent-started servers stop themselves after 15 idle minutes (no requests, CPU, or log output), and you get a notification. Agents are told to stop servers when they are done.
 - **A memory and server budget.** An agent cannot start a sixth server, or go past 8 GB of dev-server RAM, without asking you.
 - **Clean kills.** devd tags the whole process tree (`DEVD_ID`), so a stop really stops the server, including the workers that `next dev` and `turbo` fork.
@@ -106,7 +106,7 @@ Run `devd` in a terminal to open the control panel shown above. The top bar is y
 | You have two worktrees of the same app | Use `devd up` in each checkout; open the printed branch-specific URL and use the full `name@checkout` id in later commands. |
 | You need a server to stay up while you step away | `devd keep <id>` or `p` in the panel; `devd keep <id> --off` returns it to normal idle handling. |
 | A startup failed | Read `devd logs <id> -n 100`, fix the app, then run `devd up <id>` again. |
-| A server was killed or intentionally stopped | Read the reason in `devd ls`; restart it yourself with `devd up <id>` if you want it back. |
+| A server was killed or intentionally stopped | The next agent start shows a native Allow once / Reject dialog. You can also restart it yourself with `devd up <id>`. |
 | You need to see what consumes your budget | `devd ls` includes devd and discovered unmanaged dev servers; adjust limits with `devd config` if needed. |
 | The proxy or hooks seem broken | `devd doctor`, then see [setup troubleshooting](docs/setup.md#troubleshooting). |
 
@@ -119,7 +119,7 @@ Agents get short instructions: a Cursor rule, a skill, and a block in `CLAUDE.md
 - run `devd ls` first and reuse;
 - start with `devd up`;
 - stop your server when you are done;
-- respect exit codes 3 (left down) and 4 (budget).
+- wait for the native approval dialog when blocked, then respect exit codes 3 (left down) and 4 (budget) if approval was not obtained.
 
 The hook enforces the important parts:
 
@@ -144,9 +144,19 @@ The hook is a guard rail, not a sandbox. It sees the shell commands the harness 
 | `failed` | died during the first 60 s | yes, after fixing the error |
 | `stopped` by agent | an agent ran `devd stop` | yes |
 | `stopped` by idle | idle auto-stop | yes |
-| `stopped` by user | you ran `devd stop` (or `s` in the panel) | no: exit 3, the agent asks you |
-| `killed` | killed outside devd (Activity Monitor, `kill`, OOM) | no: exit 3 |
-| `exited` | exited on its own after startup | no: exit 3 |
+| `stopped` by user | you ran `devd stop` (or `s` in the panel) | native approval required; exit 3 without approval |
+| `killed` | killed outside devd (Activity Monitor, `kill`, OOM) | native approval required; exit 3 without approval |
+| `exited` | exited on its own after startup | native approval required; exit 3 without approval |
+
+## Native start approvals
+
+When an agent's `devd up` (or restart of a down server) is blocked by a user stop, outside kill, later exit, or full budget, devd opens a macOS **Allow once / Reject** dialog. It shows the server id, checkout, exact command, execution mode, reason, and current RAM/server usage. If both restart and budget permission are needed, one dialog covers both explicitly.
+
+**Allow once** continues that start, rechecks state, and uses the usual readiness wait. It does not change global limits or stop other servers. **Reject** leaves it down. The dialog expires after 2 minutes; each queue wait is capped at 5 minutes. A missing or failed dialog also leaves it down. Terminal output announces the wait and reports the decision; no response is never permission.
+
+Concurrent starts in one checkout share the result: followers reuse the running server or the recent refusal. Other dialogs queue. Rejected, expired, and unavailable requests are suppressed for 10 minutes for the same command and blocking state. A later user stop or changed command/limits needs fresh approval. Your own CLI starts keep their existing behavior; `--over-budget` remains user-only. On systems without macOS dialogs, blocked agent starts fail closed with an explicit unavailable result.
+
+Already-running agents use this behavior on their next `devd` invocation: the CLI and hooks resolve this checkout on each call. The existing hook supplies approval guidance even when a session has older instructions loaded. No session or dev-server restart is needed for this update; a command that already returned a refusal must be run again.
 
 ## Idle auto-stop
 
@@ -171,7 +181,7 @@ devd config                       # max_rss=8.0G max_servers=5 agent_idle=15m us
 devd config max_rss=12G max_servers=6
 ```
 
-The budget counts devd servers and dev servers started outside devd. An agent that would go over it gets exit 4. You can override it once with `devd up --over-budget`.
+The budget counts devd servers and dev servers started outside devd. An agent that would go over it gets a native approval dialog and, without approval, exit 4. You can override it once with `devd up --over-budget`.
 
 ## Configuration
 
@@ -208,7 +218,7 @@ Every key is optional. Without a config, devd names an app from the `portless` k
 | `devd setup [--harness …] [--dry-run] [--uninstall]` | install or remove the integration |
 | `devd doctor` | check the install |
 
-Exit codes: `0` ok, `1` error (including a startup failure), `3` left down by the user or killed from outside, `4` over budget, `5` user-only action.
+Exit codes: `0` ok, `1` error (including a startup failure), `3` left down without approval, `4` over budget without approval, `5` user-only action.
 
 ## Uninstall
 

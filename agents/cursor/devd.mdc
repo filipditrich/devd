@@ -1,5 +1,5 @@
 ---
-description: Local dev servers run only through devd (supervised, behind portless). Reuse before spawn, stop when done, never restart what the user stopped.
+description: Local dev servers run only through devd (supervised, behind portless). Reuse before spawn, stop when done, wait for native approval when a start is blocked.
 alwaysApply: true
 ---
 
@@ -18,10 +18,12 @@ Do not leave servers running that nobody needs:
 - devd stops agent-started servers after 15 minutes without activity (no requests, CPU, or log output) and notifies the user. That is intended. Do not keep a server alive with polling, curl loops, or restarts. If you need it again later, `devd up <id>` works after an idle stop.
 - Only stop servers you started. Leave the user's own servers alone.
 
+`devd up` and restarting a down server show a native Allow once / Reject dialog for a user stop, outside kill, later exit, or full budget. Keep the command alive while approval is pending and tell the user devd is waiting. Allow continues that exact start automatically; rejection, expiry, or an unavailable dialog leaves it down. Repeat refusals are suppressed for 10 minutes.
+
 Exit codes:
 
-- `3`: the user stopped it, or it was killed or died on its own. Do not start it again and do not work around it. Tell the user; they can run `devd up <id>`.
-- `4`: memory or server budget is full. Reuse a running server or ask the user to stop one.
+- `3`: approval to bring a stopped/killed/exited server back was not obtained. Tell the user and stop that server work; respect the refusal.
+- `4`: approval to exceed the budget was not obtained. Tell the user and stop that server work, or reuse an appropriate running server.
 - `5`: user-only action.
 
 User-only: `devd stop --all` / `--strays`, `devd forget`, `devd keep`, `devd config key=value`, `devd up --over-budget`, `devd up --force`, `devd ui`, `devd setup`, `portless --force`, `portless proxy stop`, `portless clean`. `devd restart` already takes a portless name back.
