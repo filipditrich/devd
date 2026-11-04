@@ -132,6 +132,7 @@ The hook enforces the important parts:
 | `devd stop --all`, `devd forget`, `devd keep`, `devd config k=v`, `devd up --over-budget`, `devd setup`, `devd ui` | denied: user only |
 | `portless --force`, `portless proxy stop`, `portless clean` | denied: user only |
 | a dev server inside `tmux`, `screen`, `pm2`, or an Orca/Paseo terminal | denied |
+| `tsc --noEmit` (also `bunx`/`npx`, `node_modules/.bin`) where the package has a `type-check` / `typecheck` / `check-types` script | denied: run the script instead |
 | `tsc --watch`, `docker compose up`, `next build`, your `ignore` patterns | left alone |
 
 The hook is a guard rail, not a sandbox. It sees the shell commands the harness shows it, and it fails open: if Node is missing, commands go through unchanged.

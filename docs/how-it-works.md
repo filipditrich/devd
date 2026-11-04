@@ -78,8 +78,9 @@ In order:
 2. Deny commands that set `DEVD_ACTOR` themselves, or that strip the agent environment around devd (`env -i`, `unset CURSOR_AGENT`).
 3. A `devd` call in command position: deny the user-only subcommands. Otherwise prefix `export DEVD_ACTOR=agent; ` so devd knows who is calling, even in harnesses that set no marker variable.
 4. A `portless` call in command position: deny `--force`, `proxy stop`, `clean` and `service uninstall`; let read-only subcommands through; rewrite `portless run` and `portless <name> <cmd>` to `devd up`.
-5. Dev servers started through tmux, screen, pm2, Orca or Paseo terminals are denied.
-6. Anything else that looks like a dev server becomes `devd up`. This covers package manager `dev` scripts, configured `dev_scripts` and `dev_commands`, `next dev`, `vite`, `nest start --watch`, and `<pm> start` only where `wrap_start` says so.
+5. A raw `tsc --noEmit` is denied when the nearest `package.json` has a `type-check`, `typecheck` or `check-types` script. The reason names the script with `pnpm` or `bun`. The script is the repo's type gate and may be cheaper or hold a one-at-a-time lock; several raw whole-program checks at once can fill the machine's RAM.
+6. Dev servers started through tmux, screen, pm2, Orca or Paseo terminals are denied.
+7. Anything else that looks like a dev server becomes `devd up`. This covers package manager `dev` scripts, configured `dev_scripts` and `dev_commands`, `next dev`, `vite`, `nest start --watch`, and `<pm> start` only where `wrap_start` says so.
    - It keeps a leading `cd`, which becomes `--cwd`.
    - It drops hard-coded `--port` / `-p` / `PORT=` so portless assigns one.
    - It passes `--raw` when the script already runs portless or turbo, or when `PORTLESS=0` is set.
