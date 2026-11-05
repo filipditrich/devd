@@ -32,6 +32,8 @@ from .model import (
     agent_may_start,
     budget_used,
     down_reason,
+    drop_record,
+    expire_down,
     idle_limit_s,
     mark_stopped,
     refresh,
@@ -425,7 +427,7 @@ def cmd_forget(args: argparse.Namespace) -> int:
             strip_private(state)
             eprint(f"devd: {rec['id']} is running. Stop it first.")
             return EXIT_ERROR
-        del state["servers"][rec["id"]]
+        drop_record(state, rec["id"], LOG_DIR)
         strip_private(state)
     print(f"forgot {rec['id']}")
     return EXIT_OK
@@ -434,12 +436,13 @@ def cmd_forget(args: argparse.Namespace) -> int:
 def cmd_prune(_args: argparse.Namespace) -> int:
     procs = snapshot()
     removed = []
-    with locked_state() as state:
+    with locked_state(expire=False) as state:
         refresh(state, procs)
+        removed.extend(expire_down(state, log_dir=LOG_DIR))
         for rid, rec in list(state["servers"].items()):
             if rec["status"] not in ("starting", "running") and not os.path.isdir(rec["root"]):
+                drop_record(state, rid, LOG_DIR)
                 removed.append(rid)
-                del state["servers"][rid]
         strip_private(state)
     print("pruned " + (", ".join(removed) if removed else "nothing"))
     return EXIT_OK
@@ -456,15 +459,19 @@ def cmd_config(args: argparse.Namespace) -> int:
                     state["config"]["max_rss_mb"] = parse_size_mb(value)
                 elif key == "max_servers":
                     state["config"]["max_servers"] = int(value)
-                elif key in ("agent_idle", "user_idle"):
+                elif key in ("agent_idle", "user_idle", "retain"):
                     state["config"][f"{key}_min"] = parse_minutes(value)
                 else:
-                    eprint(f"devd: unknown key {key} (use max_rss=8G, max_servers=5, agent_idle=15m, user_idle=off)")
+                    eprint(
+                        f"devd: unknown key {key} "
+                        "(use max_rss=8G, max_servers=5, agent_idle=15m, user_idle=off, retain=5d)"
+                    )
                     return EXIT_ERROR
         cfg = state["config"]
     print(
         f"max_rss={cfg['max_rss_mb'] / 1024:.1f}G max_servers={cfg['max_servers']} "
-        f"agent_idle={fmt_minutes(cfg['agent_idle_min'])} user_idle={fmt_minutes(cfg['user_idle_min'])}"
+        f"agent_idle={fmt_minutes(cfg['agent_idle_min'])} user_idle={fmt_minutes(cfg['user_idle_min'])} "
+        f"retain={fmt_minutes(cfg['retain_min'])}"
     )
     return EXIT_OK
 

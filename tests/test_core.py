@@ -13,7 +13,7 @@ os.environ["DEVD_CONFIG"] = str(TESTS / "fixtures" / "config.json")
 sys.path.insert(0, str(TESTS.parent / "src"))
 
 from devd.install import MARK_BEGIN, MARK_END, replace_block  # noqa: E402
-from devd.model import agent_may_start, classify_exit, down_reason, idle_limit_s, note_presence  # noqa: E402
+from devd.model import agent_may_start, classify_exit, down_reason, expire_down, idle_limit_s, note_presence  # noqa: E402
 from devd.naming import agent_name_error, fallback_name, package_label, record_id, rename_record  # noqa: E402
 from devd.ui import group_rows, repo_label  # noqa: E402
 from devd.procs import Proc, route_pids  # noqa: E402
@@ -32,7 +32,7 @@ class Parsing(unittest.TestCase):
             parse_minutes("soon")
 
     def test_minutes_round_trip(self) -> None:
-        for text in ("15m", "1h", "30s", "off", "90m"):
+        for text in ("15m", "1h", "5d", "2d", "30s", "off", "90m"):
             self.assertEqual(fmt_minutes(parse_minutes(text)), text)
 
     def test_sizes(self) -> None:
@@ -159,6 +159,47 @@ class Lifecycle(unittest.TestCase):
     def test_idle_reason(self) -> None:
         rec = {"status": "stopped", "stopped_by": "idle", "idle_limit_min": 15, "stopped_at": now()}
         self.assertTrue(down_reason(rec).startswith("stopped after 15m idle"))
+
+    def test_down_records_older_than_retain_are_deleted(self) -> None:
+        moment = 1_700_000_000.0
+        day = 86400
+        with tempfile.TemporaryDirectory() as directory:
+            log_dir = Path(directory, "logs")
+            log_dir.mkdir()
+            old_log = log_dir / "old.log"
+            young_log = log_dir / "young.log"
+            live_log = log_dir / "live.log"
+            outside = Path(directory, "secret.log")
+            orphan = log_dir / "orphan.log"
+            recent_orphan = log_dir / "recent-orphan.log"
+            for path in (old_log, young_log, live_log, outside, orphan, recent_orphan):
+                path.write_text(path.name)
+            os.utime(young_log, (1, 1))
+            os.utime(live_log, (1, 1))
+            os.utime(orphan, (1, 1))
+            os.utime(recent_orphan, (moment, moment))
+            state = {
+                "config": {"retain_min": 5 * 24 * 60},
+                "servers": {
+                    "old": {"status": "stopped", "stopped_by": "user", "stopped_at": moment - 6 * day, "log": str(old_log)},
+                    "boundary": {"status": "killed", "ended_at": moment - 5 * day, "log": str(young_log)},
+                    "live": {"status": "running", "started_at": moment - 10 * day, "log": str(live_log)},
+                    "outside": {"status": "failed", "ended_at": moment - 8 * day, "log": str(outside)},
+                },
+            }
+            removed = expire_down(state, now_s=moment, log_dir=log_dir)
+            self.assertEqual(removed, ["old", "outside"])
+            self.assertEqual(set(state["servers"]), {"boundary", "live"})
+            self.assertFalse(old_log.exists())
+            self.assertTrue(young_log.exists())
+            self.assertTrue(live_log.exists())
+            self.assertTrue(outside.exists())
+            self.assertFalse(orphan.exists())
+            self.assertTrue(recent_orphan.exists())
+
+            kept = {"config": {"retain_min": 0}, "servers": {"old": {"status": "stopped", "stopped_at": 1}}}
+            self.assertEqual(expire_down(kept, now_s=moment, log_dir=log_dir), [])
+            self.assertIn("old", kept["servers"])
 
     def test_a_live_process_is_not_left_looking_failed(self) -> None:
         rec = {"status": "failed", "port": 4610, "ended_at": 1, "exit_code": 1}
