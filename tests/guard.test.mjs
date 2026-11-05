@@ -235,6 +235,14 @@ describe('guardCommand: raw tsc type checks', () => {
 		assert.equal(guardCommand('bun run type-check', dir).action, 'allow');
 		assert.equal(guardCommand('tsc --noEmit', makePkg('vite')).action, 'allow');
 	});
+
+	test('tells the user it blocked a type check, not a dev server', () => {
+		const dir = typeCheckPkg();
+		const out = handleHook(JSON.stringify({ command: 'tsc --noEmit', cwd: dir }), 'beforeShellExecution');
+		assert.equal(out.permission, 'deny');
+		assert.match(out.user_message, /raw tsc type check/);
+		assert.doesNotMatch(out.user_message, /dev-server/);
+	});
 });
 
 describe('inferName', () => {
