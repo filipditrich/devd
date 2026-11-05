@@ -203,6 +203,40 @@ describe('guardCommand: devd itself', () => {
 	});
 });
 
+describe('guardCommand: raw tsc type checks', () => {
+	function typeCheckPkg(extra = {}) {
+		const dir = makePkg('vite');
+		writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'demo', scripts: { 'type-check': 'bun check', ...extra } }));
+		return dir;
+	}
+
+	test('denies raw tsc --noEmit in a package with a type-check script and names the script', () => {
+		const dir = typeCheckPkg();
+		const result = guardCommand('tsc --noEmit -p .', dir);
+		assert.equal(result.action, 'deny');
+		assert.match(result.reason, /`bun run type-check`/);
+	});
+
+	test('follows cd and bunx / node_modules/.bin invocations', () => {
+		const dir = typeCheckPkg();
+		assert.equal(guardCommand(`cd ${dir} && bunx tsc --noEmit | tail -20`, '/').action, 'deny');
+		assert.equal(guardCommand('./node_modules/.bin/tsc -p tsconfig.json --noEmit', dir).action, 'deny');
+	});
+
+	test('names pnpm when the repo has a pnpm lockfile', () => {
+		const dir = typeCheckPkg();
+		writeFileSync(join(dir, 'pnpm-lock.yaml'), '');
+		assert.match(guardCommand('npx tsc --noEmit', dir).reason, /`pnpm run type-check`/);
+	});
+
+	test('allows tsc builds, packages without a type-check script, and the script itself', () => {
+		const dir = typeCheckPkg();
+		assert.equal(guardCommand('tsc -p tsconfig.ui.json', dir).action, 'allow');
+		assert.equal(guardCommand('bun run type-check', dir).action, 'allow');
+		assert.equal(guardCommand('tsc --noEmit', makePkg('vite')).action, 'allow');
+	});
+});
+
 describe('inferName', () => {
 	test('reads the package.json portless key first', () => {
 		assert.equal(inferName(makePkg('next dev', { portless: 'invoicer' })), 'invoicer');

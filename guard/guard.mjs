@@ -31,7 +31,38 @@ const DEVD_CALL_RE = new RegExp(String.raw`${COMMAND_START}devd(?:\s|$)`);
 const PORTLESS_CALL_RE = new RegExp(String.raw`${COMMAND_START}portless(?:\s|$)`);
 const PORTLESS_TAIL_RE = new RegExp(String.raw`${COMMAND_START}portless(?:\s+(.*))?$`, 's');
 
+/** Whole-program `tsc --noEmit`, also via bunx/npx or node_modules/.bin. */
+const RAW_TSC_CHECK_RE = new RegExp(String.raw`${COMMAND_START}tsc\s[^;&|]*--noEmit\b`, 'i');
+const TYPE_CHECK_SCRIPTS = ['type-check', 'typecheck', 'check-types'];
+
 let cachedSettings = null;
+
+function packageManagerFor(dir) {
+	let current = dir;
+	for (let i = 0; i < 8; i += 1) {
+		if (existsSync(join(current, 'pnpm-lock.yaml'))) return 'pnpm';
+		const parent = dirname(current);
+		if (parent === current) break;
+		current = parent;
+	}
+	return 'bun';
+}
+
+/**
+ * A raw `tsc --noEmit` where the package has a type-check script: the script is the repo's type gate
+ * and may be cheaper or memory-locked, while raw tsc on a large project takes up to ~10 GB.
+ */
+function rawTypeCheck(command, cwd) {
+	if (!RAW_TSC_CHECK_RE.test(unquoted(command))) return null;
+	const found = findPackageJson(splitInvocation(command, cwd).cwd);
+	const scripts = found?.pkg?.scripts ?? {};
+	const script = TYPE_CHECK_SCRIPTS.find((name) => typeof scripts[name] === 'string');
+	if (!script) return null;
+	return {
+		action: 'deny',
+		reason: `Run \`${packageManagerFor(found.dir)} run ${script}\` in ${found.dir} instead of raw tsc. The script is this repo's type gate and may be cheaper or hold a one-at-a-time lock; raw whole-program tsc can take ~10 GB and several at once run the machine out of memory.`,
+	};
+}
 
 /**
  * User settings shared with devd (`~/.config/devd/config.json`, or `$DEVD_CONFIG`).
@@ -336,6 +367,9 @@ export function guardCommand(input, cwd = '') {
 		}
 		return { action: 'allow' };
 	}
+
+	const typeCheck = rawTypeCheck(command, cwd);
+	if (typeCheck) return typeCheck;
 
 	if (LAUNCHER_RE.test(command.trim())) {
 		const plain = command.replace(/['"\\]|\\n/g, ' ');
