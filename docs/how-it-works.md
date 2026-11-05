@@ -55,6 +55,10 @@ The runner wakes every 20 s (`DEVD_IDLE_TICK_S`) and counts the server as active
 
 `last_active` is written to the state about once a minute. When `now - last_active` passes the limit for whoever started the server, the runner marks it `stopped by idle` and kills the family. It also writes a line to the log and posts a macOS notification through `osascript`. `devd ls` reads listeners with `lsof` instead of connecting to ports, so listing never counts as activity.
 
+## Retention
+
+Every command that locks state drops down records older than `retain_min` (5 days by default) and deletes their logs, plus log files that no longer belong to a record. Running and starting servers are left alone. `retain_min` of 0 disables it. `devd prune` runs the same pass, also drops down records whose checkout directory is gone, and prints the ids.
+
 ## Servers devd did not start
 
 `devd ls` also lists dev servers it does not own:
@@ -103,7 +107,7 @@ Broken or empty input fails open.
 
 ```json
 {
-  "config": { "max_rss_mb": 8192, "max_servers": 5, "agent_idle_min": 15, "user_idle_min": 0 },
+  "config": { "max_rss_mb": 8192, "max_servers": 5, "agent_idle_min": 15, "user_idle_min": 0, "retain_min": 7200 },
   "servers": {
     "shop@fix-cart": {
       "id": "shop@fix-cart", "name": "shop", "root": "…/.worktrees/fix-cart/acme-shop", "cwd": "…",

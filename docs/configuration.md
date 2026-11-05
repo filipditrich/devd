@@ -2,7 +2,7 @@
 
 devd has two kinds of settings:
 
-- **Limits** (memory budget, server count, idle timeouts). These change often. Set them with `devd config` and they are stored in devd's state.
+- **Limits** (memory budget, server count, idle timeouts, how long down records are kept). These change often. Set them with `devd config` and they are stored in devd's state.
 - **Project rules** (where your code lives, what to call each app, which commands are dev servers). These live in `~/.config/devd/config.json`, which both devd and the agent hook read.
 
 ## Limits: `devd config`
@@ -10,7 +10,7 @@ devd has two kinds of settings:
 ```bash
 devd config                                   # show
 devd config max_rss=12G max_servers=6         # set (user only)
-devd config agent_idle=30m user_idle=off
+devd config agent_idle=30m user_idle=off retain=5d
 ```
 
 | Key | Default | Meaning |
@@ -19,8 +19,11 @@ devd config agent_idle=30m user_idle=off
 | `max_servers` | `5` | number of running dev servers before agents need native approval (exit 4 without approval) |
 | `agent_idle` | `15m` | idle time before an agent-started server is stopped; `off` disables |
 | `user_idle` | `off` | the same for servers you start |
+| `retain` | `5d` | how long a down record and its log are kept; `off` keeps them until you forget or prune |
 
-Durations accept `30s`, `15`, `15m`, `2h`, `off`. Sizes accept `512M`, `8G`.
+Durations accept `30s`, `15`, `15m`, `2h`, `5d`, `off`. Sizes accept `512M`, `8G`.
+
+`retain` applies to records that are already down (`stopped`, `failed`, `killed`, `exited`). The next `devd` command that locks state deletes the ones older than that, and deletes logs in the log directory that no longer belong to a record. A running server is left up; idle limits and `devd stop` are what take a process down. `devd prune` does the same age pass, also drops down records whose checkout directory is gone, and prints the ids.
 
 ## Project rules: `~/.config/devd/config.json`
 

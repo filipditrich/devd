@@ -55,10 +55,10 @@ def main(argv: list[str]) -> int:
     p.add_argument("target")
     p.set_defaults(func=cmd_forget)
 
-    p = sub.add_parser("prune", help="drop down records whose checkout no longer exists")
+    p = sub.add_parser("prune", help="drop down records older than retain, and ones whose checkout is gone")
     p.set_defaults(func=cmd_prune)
 
-    p = sub.add_parser("config", help="show or set budget: devd config max_rss=8G max_servers=5")
+    p = sub.add_parser("config", help="show or set limits: devd config max_rss=8G retain=5d")
     p.add_argument("pairs", nargs="*")
     p.set_defaults(func=cmd_config)
 

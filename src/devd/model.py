@@ -4,8 +4,19 @@ from __future__ import annotations
 
 import re
 import time
+from pathlib import Path
 
-from .config import AGENT_PROC_RE, DEV_CMD_RE, HOME, LOG_DIR, SIGNAL_CODES, STARTUP_GRACE_S, WORK_DIRS, WRAPPER_RE
+from .config import (
+    AGENT_PROC_RE,
+    DEFAULT_CONFIG,
+    DEV_CMD_RE,
+    HOME,
+    LOG_DIR,
+    SIGNAL_CODES,
+    STARTUP_GRACE_S,
+    WORK_DIRS,
+    WRAPPER_RE,
+)
 from .util import fmt_minutes, now
 from .state import read_routes
 from .procs import Proc, cwd_of, descendants, family, own_ancestors, proxy_pid, tree_rss
@@ -69,6 +80,76 @@ def idle_limit_s(rec: dict, cfg: dict) -> int:
     if rec.get("keep"):
         return 0
     return int(float(cfg.get(f"{rec.get('started_by', 'user')}_idle_min", 0)) * 60)
+
+
+def record_down_at(rec: dict) -> float:
+    """When a down record went down. 0 when the record has no timestamp."""
+    stamps = [float(s) for s in (rec.get("ended_at"), rec.get("stopped_at")) if s]
+    if stamps:
+        return max(stamps)
+    return float(rec.get("started_at") or 0)
+
+
+def unlink_log(path: str | None, log_dir: Path) -> None:
+    """Deletes a log file only when it sits inside `log_dir`."""
+    if not path:
+        return
+    try:
+        root = log_dir.resolve()
+        target = Path(path).resolve()
+    except OSError:
+        return
+    if root not in target.parents or not target.is_file():
+        return
+    target.unlink(missing_ok=True)
+
+
+def drop_record(state: dict, rid: str, log_dir: Path | None) -> None:
+    rec = state["servers"].pop(rid)
+    if log_dir is not None:
+        unlink_log(rec.get("log"), log_dir)
+
+
+def expire_down(state: dict, *, now_s: float | None = None, log_dir: Path | None = None) -> list[str]:
+    """Drop down records older than `retain_min` and their logs. Returns removed ids.
+
+    Running and starting servers stay. `retain_min` of 0 keeps every record.
+    Orphan logs in `log_dir` older than the same limit are deleted too.
+    """
+    limit_min = float(state.get("config", {}).get("retain_min", DEFAULT_CONFIG["retain_min"]))
+    if limit_min <= 0:
+        return []
+    moment = now() if now_s is None else now_s
+    cutoff = moment - limit_min * 60
+    removed: list[str] = []
+    for rid, rec in list(state["servers"].items()):
+        if rec.get("status") in ("starting", "running"):
+            continue
+        ended = record_down_at(rec)
+        if ended and ended < cutoff:
+            drop_record(state, rid, log_dir)
+            removed.append(rid)
+    if log_dir is not None and log_dir.is_dir():
+        live: set[Path] = set()
+        for rec in state["servers"].values():
+            log = rec.get("log")
+            if not log:
+                continue
+            try:
+                live.add(Path(log).resolve())
+            except OSError:
+                continue
+        root = log_dir.resolve()
+        for entry in log_dir.iterdir():
+            try:
+                target = entry.resolve()
+            except OSError:
+                continue
+            if target in live or root not in target.parents or not target.is_file():
+                continue
+            if entry.stat().st_mtime < cutoff:
+                target.unlink(missing_ok=True)
+    return removed
 
 
 def down_reason(rec: dict) -> str:

@@ -118,7 +118,7 @@ Agents get short instructions: a Cursor rule, a skill, and a block in `CLAUDE.md
 
 - run `devd ls` first and reuse;
 - start with `devd up`;
-- stop your server when you are done;
+- stop your server when you are done (devd drops the down record after 5 days);
 - wait for the native approval dialog when blocked, then respect exit codes 3 (left down) and 4 (budget) if approval was not obtained.
 
 The hook enforces the important parts:
@@ -175,10 +175,19 @@ Servers you start have no idle limit unless you set `user_idle`. Pin any server 
 devd config agent_idle=30m user_idle=2h     # off disables
 ```
 
+## Retention
+
+A down record is how devd remembers why a server is down, including a stop you made. It is not kept forever. After `retain` (5 days by default) the next devd command deletes the record and its log. A server that is still running stays up.
+
+```bash
+devd config retain=5d    # off keeps records until you forget or prune them
+devd prune               # delete expired records now, plus ones whose checkout is gone
+```
+
 ## Budget
 
 ```bash
-devd config                       # max_rss=8.0G max_servers=5 agent_idle=15m user_idle=off
+devd config                       # max_rss=8.0G max_servers=5 agent_idle=15m user_idle=off retain=5d
 devd config max_rss=12G max_servers=6
 ```
 
@@ -214,7 +223,7 @@ Every key is optional. Without a config, devd names an app from the `portless` k
 | `devd stop <target> \| --app NAME \| --strays \| --all` | stop and keep down |
 | `devd keep <target> [--off]` | exempt from idle auto-stop |
 | `devd config [key=value …]` | show or set budget and idle limits |
-| `devd forget <target>` / `devd prune` | drop a down record / drop records whose checkout is gone |
+| `devd forget <target>` / `devd prune` | drop one down record / drop records older than `retain`, and ones whose checkout is gone |
 | `devd` / `devd ui` | control panel (`?` shows every key) |
 | `devd setup [--harness …] [--dry-run] [--uninstall]` | install or remove the integration |
 | `devd doctor` | check the install |

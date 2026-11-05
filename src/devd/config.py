@@ -23,7 +23,13 @@ PROXY_PID_FILE = PORTLESS_DIR / "proxy.pid"
 
 CONFIG_FILE = Path(os.environ.get("DEVD_CONFIG") or HOME / ".config" / "devd" / "config.json")
 
-DEFAULT_CONFIG = {"max_rss_mb": 8192, "max_servers": 5, "agent_idle_min": 15, "user_idle_min": 0}
+DEFAULT_CONFIG = {
+    "max_rss_mb": 8192,
+    "max_servers": 5,
+    "agent_idle_min": 15,
+    "user_idle_min": 0,
+    "retain_min": 5 * 24 * 60,
+}
 IDLE_TICK_S = float(os.environ.get("DEVD_IDLE_TICK_S") or 20)
 IDLE_CPU_S = 0.3
 IDLE_SAVE_S = 60

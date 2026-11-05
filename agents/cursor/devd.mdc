@@ -13,7 +13,7 @@ Start local HTTP dev servers only with `devd up`. It runs the server detached be
 
 Do not leave servers running that nobody needs:
 
-- Once you are done with a server you started (tests passed, screenshot taken, change verified), run `devd stop <id>` before you finish.
+- Once you are done with a server you started (tests passed, screenshot taken, change verified), run `devd stop <id>` before you finish. That stop is the cleanup: devd deletes a down record and its log after 5 days. Do not run `devd forget`.
 - Keep it running only when you hand it to the user to check. Say so in your reply, with the id and URL.
 - devd stops agent-started servers after 15 minutes without activity (no requests, CPU, or log output) and notifies the user. That is intended. Do not keep a server alive with polling, curl loops, or restarts. If you need it again later, `devd up <id>` works after an idle stop.
 - Only stop servers you started. Leave the user's own servers alone.

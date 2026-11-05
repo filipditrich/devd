@@ -7,15 +7,20 @@ import json
 from contextlib import contextmanager
 from pathlib import Path
 
-from .config import DEFAULT_CONFIG, DEVD_DIR, LOCK_FILE, ROUTES_FILE, STATE_FILE
+from .config import DEFAULT_CONFIG, DEVD_DIR, LOCK_FILE, LOG_DIR, ROUTES_FILE, STATE_FILE
 
 
 @contextmanager
-def locked_state():
+def locked_state(*, expire: bool = True):
     DEVD_DIR.mkdir(parents=True, exist_ok=True)
     with open(LOCK_FILE, "a+") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
         state = load_state()
+        if expire:
+            # imported lazily: model imports this module
+            from .model import expire_down
+
+            expire_down(state, log_dir=LOG_DIR)
         try:
             yield state
         finally:

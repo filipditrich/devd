@@ -62,15 +62,18 @@ def parse_size_mb(value: str) -> int:
 
 
 def parse_minutes(value: str) -> float:
-    """Parses `15`, `15m`, `1h`, `30s`, `0`, or `off` into minutes (0 disables)."""
+    """Parses `15`, `15m`, `1h`, `5d`, `30s`, `0`, or `off` into minutes (0 disables)."""
     v = value.strip().lower()
     if v in ("off", "never", "0", ""):
         return 0
-    m = re.fullmatch(r"(\d+(?:\.\d+)?)\s*(s|m|min|h)?", v)
+    m = re.fullmatch(r"(\d+(?:\.\d+)?)\s*(s|m|min|h|d)?", v)
     if not m:
         raise ValueError(f"bad duration: {value}")
     n = float(m.group(1))
-    return {"h": n * 60, "s": n / 60}.get(m.group(2) or "m", n)
+    unit = m.group(2) or "m"
+    if unit == "min":
+        unit = "m"
+    return n * {"d": 1440, "h": 60, "s": 1 / 60, "m": 1}[unit]
 
 
 def fmt_minutes(minutes: float) -> str:
@@ -78,6 +81,8 @@ def fmt_minutes(minutes: float) -> str:
         return "off"
     if minutes < 1:
         return f"{round(minutes * 60)}s"
+    if minutes >= 1440 and minutes % 1440 == 0:
+        return f"{int(minutes // 1440)}d"
     if minutes >= 60 and minutes % 60 == 0:
         return f"{int(minutes // 60)}h"
     return f"{minutes:g}m"
