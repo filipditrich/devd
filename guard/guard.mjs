@@ -33,6 +33,7 @@ const PORTLESS_TAIL_RE = new RegExp(String.raw`${COMMAND_START}portless(?:\s+(.*
 
 /** Whole-program `tsc --noEmit`, also via bunx/npx or node_modules/.bin. */
 const RAW_TSC_CHECK_RE = new RegExp(String.raw`${COMMAND_START}tsc\s[^;&|]*--noEmit\b`, 'i');
+const DENY_NOTICE = 'Blocked a dev-server command. See the agent message.';
 const TYPE_CHECK_SCRIPTS = ['type-check', 'typecheck', 'check-types'];
 
 let cachedSettings = null;
@@ -61,6 +62,7 @@ function rawTypeCheck(command, cwd) {
 	return {
 		action: 'deny',
 		reason: `Run \`${packageManagerFor(found.dir)} run ${script}\` in ${found.dir} instead of raw tsc. The script is this repo's type gate and may be cheaper or hold a one-at-a-time lock; raw whole-program tsc can take ~10 GB and several at once run the machine out of memory.`,
+		notice: `Blocked a raw tsc type check. The agent was told to run the ${script} script.`,
 	};
 }
 
@@ -480,7 +482,7 @@ export function handleHook(raw, mode) {
 
 	if (event === 'beforeShellExecution') {
 		if (result.action === 'deny') {
-			return { permission: 'deny', agent_message: result.reason, user_message: 'Blocked a dev-server command. See the agent message.' };
+			return { permission: 'deny', agent_message: result.reason, user_message: result.notice ?? DENY_NOTICE };
 		}
 		if (result.action === 'rewrite' && !isDevdOnlyRewrite(command, result.command)) {
 			return {
@@ -493,7 +495,7 @@ export function handleHook(raw, mode) {
 	}
 
 	if (result.action === 'deny') {
-		return { permission: 'deny', agent_message: result.reason, user_message: 'Blocked a dev-server command. See the agent message.' };
+		return { permission: 'deny', agent_message: result.reason, user_message: result.notice ?? DENY_NOTICE };
 	}
 	if (result.action === 'rewrite') {
 		const updated_input = { ...toolInput, command: result.command };
